@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administración de Tero</title>
+  <meta name="theme-color" content="#15181D" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'%3E%3Crect width='34' height='34' rx='9' fill='%23fff'/%3E%3Cpath d='M15.4 23.8 14.6 29.8M18.4 23.8 19 29.8' stroke='%23D9828C' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M20 13.4C14.4 14 9.2 17 4.8 21.8L9 22.4C12 25 17 25.6 20.6 23.2 23.2 21.2 23.6 16.6 22 14.2Z' fill='%237B817B'/%3E%3Cpath d='M18.4 17C14.8 18 11.2 20 8.2 22.4 12.4 22.2 16.2 21 19.4 19Z' fill='%23565C56'/%3E%3Cpath d='M22.8 17.8C22.8 20.6 21.9 22.2 20.6 23.2 17 25.6 12 25 9 22.4 14 22.4 19 20.8 22.8 17.8Z' fill='%23fff'/%3E%3Cpath d='M18 14.6C20.4 13.6 23.4 14.8 23.2 17.8 21 19.6 18.6 19.4 17.2 17.8Z' fill='%2315181D'/%3E%3Ccircle cx='21.6' cy='10.4' r='3.4' fill='%237B817B'/%3E%3Cpath d='M24.8 9.4C25.2 12.2 24 14.4 21.8 15.4L20.2 14.4C22.4 13.6 23.6 12 23.6 9.4Z' fill='%2315181D'/%3E%3Cpath d='M19.4 8C16.8 7.4 14 7.6 11 6.2 13.4 8.2 16.4 9.4 18.8 9.8Z' fill='%2315181D'/%3E%3Cpath d='M24.8 9.8 27.4 10.6V11.6L24.8 11.9Z' fill='%23D62839'/%3E%3Cpath d='M27.4 10.6 30 11.2 27.4 11.6Z' fill='%2315181D'/%3E%3Ccircle cx='22.4' cy='9.9' r='1.1' fill='%23D62839'/%3E%3Ccircle cx='22.4' cy='9.9' r='.42' fill='%2315181D'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet" />
+  <style>
+    /* Misma identidad que la tienda: papel, tinta y rojo ojo de tero. */
+    :root {
+      --paper: #F2F3EF; --ink: #15181D; --eye: #D62839; --eye-dark: #B51F2F;
+      --sun: #F4B400; --muted: #565C56; --line: #CBCEC7; --white: #fff;
+      --font: 'Archivo', 'Arial Narrow', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: var(--paper); color: var(--ink); line-height: 1.45; }
+    button, input { font-family: inherit; }
+    button:focus-visible, input:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+    .brand { display: flex; align-items: center; gap: .6rem; }
+    .brand svg { width: 34px; height: 34px; flex: none; }
+    .brand-name { font-size: 1.9rem; font-weight: 800; font-stretch: 68%; line-height: 1; letter-spacing: .01em; }
+
+    /* Login */
+    #login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .login-card { background: var(--white); padding: 2.5rem; border-radius: 12px; width: 380px; max-width: 100%; }
+    .login-card .brand { margin-bottom: 1.6rem; }
+    .login-card .brand-name { color: var(--ink); }
+    .login-card h1 { font-size: 2.3rem; font-weight: 800; font-stretch: 68%; line-height: 1; margin-bottom: .4rem; }
+    .login-card p { color: var(--muted); font-size: .95rem; margin-bottom: 1.8rem; }
+    .field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: 1rem; }
+    label { font-size: .85rem; font-weight: 600; }
+    input[type=text], input[type=password], input[type=number] {
+      padding: .65rem .8rem; border: 1.5px solid var(--line); border-radius: 8px; font-size: .95rem;
+      background: var(--white); color: var(--ink);
+    }
+    input:focus { outline: none; border-color: var(--ink); }
+    input:focus-visible { outline: 3px solid rgba(21,24,29,.18); outline-offset: 0; }
+    .error-msg { color: var(--eye-dark); font-size: .85rem; min-height: 1.2em; font-weight: 500; }
+    .btn-primary {
+      width: 100%; background: var(--eye); color: var(--white); border: none;
+      padding: .8rem; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600; margin-top: .5rem;
+    }
+    .btn-primary:hover { background: var(--eye-dark); }
+
+    /* App shell */
+    #app { display: none; min-height: 100vh; }
+    nav {
+      background: var(--ink); color: var(--white); display: flex;
+      align-items: center; padding: 0 clamp(1rem, 3vw, 2rem); min-height: 62px; gap: .5rem; flex-wrap: wrap;
+    }
+    nav h1 { display: flex; align-items: center; gap: .9rem; flex: 1; font-weight: 400; }
+    nav h1 .brand-name { color: var(--white); }
+    nav h1 .section-name { font-size: .95rem; color: rgba(255,255,255,.65); padding-left: .9rem; border-left: 1.5px solid rgba(255,255,255,.3); }
+    .nav-tab {
+      background: none; border: none; color: rgba(255,255,255,.7);
+      padding: .5rem 1rem; border-radius: 999px; cursor: pointer; font-size: .92rem; font-weight: 500;
+    }
+    .nav-tab:hover { background: rgba(255,255,255,.12); color: var(--white); }
+    .nav-tab.active { background: var(--white); color: var(--ink); font-weight: 600; }
+    .nav-tab:focus-visible, .nav-logout:focus-visible { outline-color: var(--white); }
+    .nav-logout {
+      background: none; border: 1.5px solid rgba(255,255,255,.4); color: var(--white);
+      padding: .4rem 1rem; border-radius: 999px; cursor: pointer; font-size: .85rem; margin-left: .5rem;
+    }
+    .nav-logout:hover { background: rgba(255,255,255,.12); }
+
+    /* Content */
+    .content { max-width: 1100px; margin: 2rem auto; padding: 0 clamp(1rem, 3vw, 2rem); }
+    .section { display: none; }
+    .section.active { display: block; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; gap: 1rem; }
+    .section-header h2 { font-size: 2.4rem; font-weight: 800; font-stretch: 68%; line-height: 1; }
+    .btn-add {
+      background: var(--eye); color: var(--white); border: none;
+      padding: .6rem 1.3rem; border-radius: 8px; cursor: pointer; font-size: .92rem; font-weight: 600;
+    }
+    .btn-add:hover { background: var(--eye-dark); }
+
+    /* Table */
+    .card { background: var(--white); border-radius: 10px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      padding: .85rem 1rem; text-align: left; font-size: .85rem; font-weight: 700;
+      color: var(--ink); border-bottom: 1.5px solid var(--ink); white-space: nowrap;
+    }
+    td { padding: .85rem 1rem; border-bottom: 1px solid #E6E8E2; font-size: .92rem; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #FAFAF8; }
+    .price-cell { font-weight: 800; font-stretch: 75%; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+    .actions { display: flex; gap: .5rem; }
+    .btn-edit, .btn-delete {
+      padding: .35rem .85rem; border-radius: 999px; cursor: pointer; font-size: .82rem; font-weight: 600; background: none;
+    }
+    .btn-edit { border: 1.5px solid var(--ink); color: var(--ink); }
+    .btn-edit:hover { background: var(--ink); color: var(--white); }
+    .btn-delete { border: 1.5px solid var(--eye); color: var(--eye-dark); }
+    .btn-delete:hover { background: var(--eye); color: var(--white); }
+    .tags { display: flex; gap: .3rem; flex-wrap: wrap; }
+    .tag { background: var(--paper); color: var(--ink); padding: .15rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 500; }
+
+    /* Orders */
+    .order-row { cursor: pointer; }
+    .order-detail { display: none; }
+    .order-detail td { background: var(--paper); }
+    .order-detail.open { display: table-row; }
+    .order-detail td { padding: .6rem 1rem 1.2rem 2.5rem; }
+    .order-detail:hover td { background: var(--paper); }
+    .items-table { width: 100%; font-size: .85rem; border-collapse: collapse; }
+    .items-table th { border-bottom: 1px solid var(--line); font-weight: 600; padding: .3rem .5rem; color: var(--muted); }
+    .items-table td { padding: .3rem .5rem; border: none; background: none; font-variant-numeric: tabular-nums; }
+    .status-badge { background: #DDE8DD; color: #1F4D2B; padding: .2rem .75rem; border-radius: 999px; font-size: .78rem; font-weight: 600; }
+
+    /* Modal */
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(21,24,29,.55); z-index: 200; align-items: center; justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+    .modal { background: var(--white); border-radius: 12px; padding: 2rem; width: 460px; max-width: 95vw; }
+    .modal h3 { font-size: 2rem; font-weight: 800; font-stretch: 68%; line-height: 1; margin-bottom: 1.5rem; }
+    .modal-actions { display: flex; gap: .8rem; margin-top: 1.5rem; justify-content: flex-end; }
+    .btn-cancel {
+      background: var(--white); border: 1.5px solid var(--line); color: var(--ink);
+      padding: .6rem 1.2rem; border-radius: 8px; cursor: pointer; font-weight: 500;
+    }
+    .btn-cancel:hover { border-color: var(--ink); }
+    .btn-save {
+      background: var(--eye); color: var(--white); border: none;
+      padding: .6rem 1.4rem; border-radius: 8px; cursor: pointer; font-weight: 600;
+    }
+    .btn-save:hover { background: var(--eye-dark); }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; max-width: calc(100vw - 3rem);
+      background: var(--ink); color: var(--white); padding: .7rem 1.3rem .7rem 1.1rem;
+      border-left: 5px solid var(--sun); border-radius: 6px; font-size: .9rem; z-index: 300;
+      opacity: 0; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    @media (prefers-reduced-motion: no-preference) { #toast { transition: opacity .25s; } }
+    .empty-state { padding: 3rem; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="brand"><svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#fff"/><path d="M15.4 23.8 14.6 29.8M18.4 23.8 19 29.8" stroke="#D9828C" stroke-width="1.5" stroke-linecap="round"/><path d="M20 13.4C14.4 14 9.2 17 4.8 21.8L9 22.4C12 25 17 25.6 20.6 23.2 23.2 21.2 23.6 16.6 22 14.2Z" fill="#7B817B"/><path d="M18.4 17C14.8 18 11.2 20 8.2 22.4 12.4 22.2 16.2 21 19.4 19Z" fill="#565C56"/><path d="M22.8 17.8C22.8 20.6 21.9 22.2 20.6 23.2 17 25.6 12 25 9 22.4 14 22.4 19 20.8 22.8 17.8Z" fill="#fff"/><path d="M18 14.6C20.4 13.6 23.4 14.8 23.2 17.8 21 19.6 18.6 19.4 17.2 17.8Z" fill="#15181D"/><circle cx="21.6" cy="10.4" r="3.4" fill="#7B817B"/><path d="M24.8 9.4C25.2 12.2 24 14.4 21.8 15.4L20.2 14.4C22.4 13.6 23.6 12 23.6 9.4Z" fill="#15181D"/><path d="M19.4 8C16.8 7.4 14 7.6 11 6.2 13.4 8.2 16.4 9.4 18.8 9.8Z" fill="#15181D"/><path d="M24.8 9.8 27.4 10.6V11.6L24.8 11.9Z" fill="#D62839"/><path d="M27.4 10.6 30 11.2 27.4 11.6Z" fill="#15181D"/><circle cx="22.4" cy="9.9" r="1.1" fill="#D62839"/><circle cx="22.4" cy="9.9" r=".42" fill="#15181D"/></svg><span class="brand-name">Tero</span></div>
+    <h1>Administración</h1>
+    <p>Ingresá para gestionar productos y órdenes.</p>
+    <div class="field"><label>Usuario</label><input id="username" type="text" autocomplete="username" /></div>
+    <div class="field"><label>Contraseña</label><input id="password" type="password" autocomplete="current-password" /></div>
+    <div class="error-msg" id="login-error"></div>
+    <button class="btn-primary" id="login-btn">Iniciar sesión</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <nav>
+    <h1><span class="brand"><svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#fff"/><path d="M15.4 23.8 14.6 29.8M18.4 23.8 19 29.8" stroke="#D9828C" stroke-width="1.5" stroke-linecap="round"/><path d="M20 13.4C14.4 14 9.2 17 4.8 21.8L9 22.4C12 25 17 25.6 20.6 23.2 23.2 21.2 23.6 16.6 22 14.2Z" fill="#7B817B"/><path d="M18.4 17C14.8 18 11.2 20 8.2 22.4 12.4 22.2 16.2 21 19.4 19Z" fill="#565C56"/><path d="M22.8 17.8C22.8 20.6 21.9 22.2 20.6 23.2 17 25.6 12 25 9 22.4 14 22.4 19 20.8 22.8 17.8Z" fill="#fff"/><path d="M18 14.6C20.4 13.6 23.4 14.8 23.2 17.8 21 19.6 18.6 19.4 17.2 17.8Z" fill="#15181D"/><circle cx="21.6" cy="10.4" r="3.4" fill="#7B817B"/><path d="M24.8 9.4C25.2 12.2 24 14.4 21.8 15.4L20.2 14.4C22.4 13.6 23.6 12 23.6 9.4Z" fill="#15181D"/><path d="M19.4 8C16.8 7.4 14 7.6 11 6.2 13.4 8.2 16.4 9.4 18.8 9.8Z" fill="#15181D"/><path d="M24.8 9.8 27.4 10.6V11.6L24.8 11.9Z" fill="#D62839"/><path d="M27.4 10.6 30 11.2 27.4 11.6Z" fill="#15181D"/><circle cx="22.4" cy="9.9" r="1.1" fill="#D62839"/><circle cx="22.4" cy="9.9" r=".42" fill="#15181D"/></svg><span class="brand-name">Tero</span></span><span class="section-name">Administración</span></h1>
+    <button class="nav-tab active" data-section="products">Productos</button>
+    <button class="nav-tab" data-section="orders">Órdenes</button>
+    <button class="nav-logout" id="logout-btn">Cerrar sesión</button>
+  </nav>
+  <div class="content">
+
+    <!-- Products -->
+    <div class="section active" id="section-products">
+      <div class="section-header">
+        <h2>Productos</h2>
+        <button class="btn-add" id="add-product-btn">+ Agregar producto</button>
+      </div>
+      <div class="card">
+        <table id="products-table">
+          <thead><tr><th>Nombre</th><th>Descripción</th><th>Precio</th><th>Categorías</th><th></th></tr></thead>
+          <tbody id="products-body"><tr><td colspan="5" class="empty-state">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Orders -->
+    <div class="section" id="section-orders">
+      <div class="section-header"><h2>Órdenes</h2></div>
+      <div class="card">
+        <table id="orders-table">
+          <thead><tr><th></th><th>Cliente</th><th>Email</th><th>Fecha</th><th>Artículos</th><th>Total</th><th>Estado</th></tr></thead>
+          <tbody id="orders-body"><tr><td colspan="7" class="empty-state">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Product modal -->
+<div id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Agregar producto</h3>
+    <div class="field"><label>Nombre</label><input id="f-name" type="text" /></div>
+    <div class="field"><label>Descripción</label><input id="f-desc" type="text" /></div>
+    <div class="field"><label>Precio (centavos, ej. 2999 = $29.99)</label><input id="f-price" type="number" min="0" /></div>
+    <div class="error-msg" id="modal-error"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="modal-cancel">Cancelar</button>
+      <button class="btn-save" id="modal-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  function cents(n) { return '$' + (n / 100).toFixed(2); }
+  function fmt(iso) { return new Date(iso).toLocaleString(); }
+
+  function toast(msg, err = false) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.style.borderLeftColor = err ? '#D62839' : '#F4B400';
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  async function api(url, opts = {}) {
+    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    if (res.status === 401) { showLogin(); return null; }
+    return res;
+  }
+
+  // ── Auth ────────────────────────────────────────────────────────────────
+
+  function showLogin() {
+    $('app').style.display = 'none';
+    $('login-screen').style.display = 'flex';
+    $('login-error').textContent = '';
+  }
+
+  function showApp() {
+    $('login-screen').style.display = 'none';
+    $('app').style.display = 'block';
+  }
+
+  $('login-btn').onclick = async () => {
+    $('login-error').textContent = '';
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('username').value, password: $('password').value }),
+    });
+    if (res.ok) { showApp(); loadProducts(); }
+    else { $('login-error').textContent = 'Usuario o contraseña incorrectos.'; }
+  };
+
+  $('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-btn').click(); });
+
+  $('logout-btn').onclick = async () => {
+    await fetch('/auth/logout', { method: 'POST' });
+    showLogin();
+  };
+
+  // ── Navigation ───────────────────────────────────────────────────────────
+
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      btn.classList.add('active');
+      const sec = btn.dataset.section;
+      $(`section-${sec}`).classList.add('active');
+      if (sec === 'products') loadProducts();
+      if (sec === 'orders') loadOrders();
+    });
+  });
+
+  // ── Products ─────────────────────────────────────────────────────────────
+
+  let editingId = null;
+
+  async function loadProducts() {
+    const res = await api('/admin/api/products');
+    if (!res) return;
+    const products = await res.json();
+    const tbody = $('products-body');
+    if (!products.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Todavía no hay productos. Agregá el primero.</td></tr>'; return; }
+    tbody.innerHTML = products.map(p => `
+      <tr>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.description || '')}</td>
+        <td class="price-cell">${cents(p.price)}</td>
+        <td><div class="tags">${(p.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div></td>
+        <td><div class="actions">
+          <button class="btn-edit" onclick="openEdit('${esc(p.id)}','${esc(p.name)}',\`${esc(p.description||'')}\`,${p.price})">Editar</button>
+          <button class="btn-delete" onclick="deleteProduct('${esc(p.id)}','${esc(p.name)}')">Eliminar</button>
+        </div></td>
+      </tr>
+    `).join('');
+  }
+
+  function openAdd() {
+    editingId = null;
+    $('modal-title').textContent = 'Agregar producto';
+    $('f-name').value = ''; $('f-desc').value = ''; $('f-price').value = '';
+    $('modal-error').textContent = '';
+    $('modal-overlay').classList.add('open');
+    $('f-name').focus();
+  }
+
+  function openEdit(id, name, desc, price) {
+    editingId = id;
+    $('modal-title').textContent = 'Editar producto';
+    $('f-name').value = name; $('f-desc').value = desc; $('f-price').value = price;
+    $('modal-error').textContent = '';
+    $('modal-overlay').classList.add('open');
+    $('f-name').focus();
+  }
+
+  function closeModal() { $('modal-overlay').classList.remove('open'); }
+
+  $('add-product-btn').onclick = openAdd;
+  $('modal-cancel').onclick = closeModal;
+  $('modal-overlay').onclick = e => { if (e.target === $('modal-overlay')) closeModal(); };
+
+  $('modal-save').onclick = async () => {
+    const name  = $('f-name').value.trim();
+    const desc  = $('f-desc').value.trim();
+    const price = parseInt($('f-price').value);
+    if (!name || isNaN(price) || price < 0) { $('modal-error').textContent = 'Completá el nombre y un precio válido.'; return; }
+
+    const url = editingId ? `/admin/api/products/${editingId}` : '/admin/api/products';
+    const method = editingId ? 'PUT' : 'POST';
+    const res = await api(url, { method, body: JSON.stringify({ name, description: desc, price }) });
+    if (!res) return;
+    if (!res.ok) { const e = await res.json(); $('modal-error').textContent = e.error || 'Error al guardar.'; return; }
+    closeModal();
+    toast(editingId ? 'Producto actualizado' : 'Producto creado');
+    loadProducts();
+  };
+
+  async function deleteProduct(id, name) {
+    if (!confirm(`¿Eliminar "${name}"? Esta acción no se puede deshacer.`)) return;
+    const res = await api(`/admin/api/products/${id}`, { method: 'DELETE' });
+    if (!res) return;
+    toast('Producto eliminado');
+    loadProducts();
+  }
+
+  // ── Orders ────────────────────────────────────────────────────────────────
+
+  async function loadOrders() {
+    const res = await api('/admin/api/orders');
+    if (!res) return;
+    const orders = await res.json();
+    const tbody = $('orders-body');
+    if (!orders.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Todavía no hay órdenes.</td></tr>'; return; }
+    tbody.innerHTML = orders.map(o => {
+      const total = (o.items || []).reduce((s, i) => s + (i.totalCost || 0), 0);
+      const rowId = 'ord-' + o.id.replace(/-/g, '');
+      return `
+        <tr class="order-row" onclick="toggleOrder('${rowId}')">
+          <td style="color:#aaa;font-size:.9rem">▶</td>
+          <td><strong>${esc(o.first_name)} ${esc(o.last_name)}</strong></td>
+          <td>${esc(o.email)}</td>
+          <td style="white-space:nowrap">${fmt(o.created_at)}</td>
+          <td>${(o.items || []).length}</td>
+          <td class="price-cell">${cents(total)}</td>
+          <td><span class="status-badge">Completado</span></td>
+        </tr>
+        <tr class="order-detail" id="${rowId}">
+          <td colspan="7">
+            <strong>ID de la orden:</strong> <code>${esc(o.id)}</code>
+            &nbsp;|&nbsp; ${esc(o.address1)}, ${esc(o.city)}, ${esc(o.state)} ${esc(o.zip_code || '')}
+            <br/><br/>
+            <table class="items-table">
+              <thead><tr><th>Producto</th><th>Cant.</th><th>Precio unitario</th><th>Total</th></tr></thead>
+              <tbody>
+                ${(o.items || []).map(i => `
+                  <tr>
+                    <td>${esc(i.name || i.productId)}</td>
+                    <td>${i.quantity}</td>
+                    <td>${cents(i.unitCost || 0)}</td>
+                    <td>${cents(i.totalCost || 0)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function toggleOrder(id) {
+    const row = $(id);
+    row.classList.toggle('open');
+    const arrow = row.previousElementSibling.querySelector('td:first-child');
+    arrow.textContent = row.classList.contains('open') ? '▼' : '▶';
+  }
+
+  // ── XSS helper ───────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  (async () => {
+    const res = await fetch('/auth/me');
+    if (res.ok) { showApp(); loadProducts(); }
+    else showLogin();
+  })();
+</script>
+</body>
+</html>
