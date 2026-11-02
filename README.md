@@ -11,6 +11,12 @@ Tero es una tienda en línea basada en microservicios. Permite explorar un catá
 
 ## Inicio rápido
 
+Crear el archivo de variables a partir del ejemplo y completarlo:
+
+```bash
+cp .env.example .env
+```
+
 ```bash
 docker compose up --build
 ```
@@ -133,11 +139,11 @@ docker compose logs -f <servicio>
 | `RETAIL_UI_ENDPOINTS_ORDERS`    | URL del servicio orders      | `http://orders:8080`  |
 
 ### Catalog / Orders / Cart
-| Variable                               | Descripción           | Default          |
-|----------------------------------------|-----------------------|------------------|
-| `RETAIL_CATALOG_PERSISTENCE_PROVIDER`  | Tipo de persistencia  | `postgres`       |
-| `RETAIL_CATALOG_PERSISTENCE_ENDPOINT`  | Host:Puerto de la DB  | `db:5432`        |
-| `DB_PASSWORD`                          | Contraseña PostgreSQL | `retailpassword` |
+| Variable                               | Descripción           | Default                       |
+|----------------------------------------|-----------------------|-------------------------------|
+| `RETAIL_CATALOG_PERSISTENCE_PROVIDER`  | Tipo de persistencia  | `postgres`                    |
+| `RETAIL_CATALOG_PERSISTENCE_ENDPOINT`  | Host:Puerto de la DB  | `db:5432`                     |
+| `DB_PASSWORD`                          | Contraseña PostgreSQL | — (obligatoria, va en `.env`) |
 
 ### Checkout
 | Variable                                   | Descripción              | Default               |
@@ -147,11 +153,11 @@ docker compose logs -f <servicio>
 | `RETAIL_CHECKOUT_ENDPOINTS_ORDERS`         | URL del servicio orders  | `http://orders:8080`  |
 
 ### Admin
-| Variable            | Descripción                | Default                   |
-|---------------------|----------------------------|---------------------------|
-| `ADMIN_USERNAME`    | Usuario administrador      | `admin`                   |
-| `ADMIN_PASSWORD`    | Contraseña administrador   | `admin`                   |
-| `ADMIN_JWT_SECRET`  | Secreto para tokens JWT    | `change-me-in-production` |
+| Variable            | Descripción                | Default                       |
+|---------------------|----------------------------|-------------------------------|
+| `ADMIN_USERNAME`    | Usuario administrador      | — (obligatoria, va en `.env`) |
+| `ADMIN_PASSWORD`    | Contraseña administrador   | — (obligatoria, va en `.env`) |
+| `ADMIN_JWT_SECRET`  | Secreto para tokens JWT    | — (obligatoria, va en `.env`) |
 
 ---
 

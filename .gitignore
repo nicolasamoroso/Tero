@@ -1,0 +1,13 @@
+# Secretos: el .env real nunca se commitea, el .example sí
+.env
+.env.*
+!.env.example
+
+# Terraform: el state puede tener datos sensibles y va al backend remoto
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Builds locales
+node_modules/
+dist/
