@@ -17,6 +17,11 @@ Crear el archivo de variables a partir del ejemplo y completarlo:
 cp .env.example .env
 ```
 
+**Si ya tenías el proyecto levantado de antes:** Postgres guarda la contraseña solo cuando crea el volumen. Si cambiás `DB_PASSWORD`, borrá el volumen una vez para que se cree de nuevo (se pierden los datos locales):
+```bash
+docker compose down -v
+```
+
 ```bash
 docker compose up --build
 ```
@@ -26,7 +31,7 @@ docker compose up --build
 | Tienda   | http://localhost:8080 |
 | Admin    | http://localhost:8081 |
 
-Credenciales del admin por defecto: `admin` / `admin`
+Las credenciales del admin son las que pongas en `ADMIN_USERNAME` y `ADMIN_PASSWORD` en tu `.env`.
 
 ## Comandos útiles
 
