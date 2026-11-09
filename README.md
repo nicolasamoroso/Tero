@@ -59,9 +59,21 @@ docker compose logs -f <servicio>
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
 
+### 0. Credenciales de AWS
+
+Toda la infraestructura vive en una única cuenta de AWS Academy, la de Nicolás. Quien quiera correr `terraform` desde su máquina necesita las credenciales de esa cuenta.
+
+Desde el lab (AWS Details → AWS CLI) se copia el bloque de credenciales a `~/.aws/credentials`. Incluye `aws_session_token`. Para comprobar que funcionan:
+
+```bash
+aws sts get-caller-identity
+```
+
 ### 1. Bucket del state de Terraform (se crea una sola vez, a mano)
 
 El state de Terraform se guarda en S3. Es lo único que no se crea con Terraform, porque tiene que existir antes de poder usarlo.
+
+**El bucket `tero-tfstate` ya existe en la cuenta compartida. Si se usan sus credenciales, se puede saltear este paso.**
 
 ```bash
 B=tero-tfstate
@@ -88,6 +100,13 @@ Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/back
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
+- El pipeline de GitHub Actions usa esas mismas credenciales como secrets del repo (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`), porque Academy no permite OIDC. Se actualizan con el script, que requiere `aws` y `gh` con sesión iniciada:
+
+  ```bash
+  ./scripts/renovar-credenciales-aws.sh
+  ```
+
+  Con `--dry-run` solo valida las credenciales, sin subir nada. Hay que correrlo únicamente con las credenciales de la cuenta compartida: con las de otra cuenta, el pipeline dejaría de encontrar el bucket del state.
 - No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
 - Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
 
