@@ -9,6 +9,12 @@ Tero es una tienda en línea basada en microservicios. Permite explorar un catá
 - [Docker](https://docs.docker.com/get-docker/) 24+
 - [Docker Compose](https://docs.docker.com/compose/install/) v2.20+
 
+Para desplegar en AWS (ver [Despliegue en AWS](#despliegue-en-aws)), además:
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.10 o más nuevo
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) v2
+- Credenciales de AWS con permisos sobre ECS, ECR, RDS, S3, ELB, Secrets Manager, CloudWatch y Lambda (en AWS Academy se usa el rol `LabRole`)
+
 ## Inicio rápido
 
 Crear el archivo de variables a partir del ejemplo y completarlo:
@@ -48,6 +54,42 @@ docker compose up --build <servicio>
 # Ver logs de un servicio
 docker compose logs -f <servicio>
 ```
+
+## Despliegue en AWS
+
+La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
+
+### 1. Bucket del state de Terraform (se crea una sola vez, a mano)
+
+El state de Terraform se guarda en S3. Es lo único que no se crea con Terraform, porque tiene que existir antes de poder usarlo.
+
+```bash
+B=tero-tfstate
+aws s3api create-bucket --bucket "$B" --region us-east-1
+aws s3api put-bucket-versioning --bucket "$B" --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket "$B" --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket "$B" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+```
+
+El nombre de un bucket es único en todo AWS. Si `tero-tfstate` ya estuviera tomado, hay que elegir otro y cambiarlo en `infra/backend.tf`.
+
+### 2. Inicializar Terraform para un ambiente
+
+Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bucket. La key se pasa al inicializar:
+
+```bash
+cd infra
+terraform init -backend-config=envs/backend-dev.hcl
+terraform plan
+```
+
+Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl`.
+
+### Limitaciones de AWS Academy
+
+- Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
+- No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
+- Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
 
 ---
 
