@@ -95,7 +95,9 @@ terraform init
 terraform apply
 ```
 
-Crea un repositorio por servicio (`tero/ui`, `tero/catalog`, `tero/cart`, `tero/orders`, `tero/checkout`, `tero/admin`) con tags inmutables, escaneo al hacer push y una política que conserva las últimas 20 imágenes. Las URLs quedan en el output `ecr_repository_urls`.
+Crea un repositorio por servicio (`tero/ui`, `tero/catalog`, `tero/cart`, `tero/orders`, `tero/checkout`, `tero/admin`) con tags inmutables y escaneo al hacer push. La política de limpieza borra las imágenes sin tag después de 1 día y conserva las últimas 30 por repositorio. Las URLs quedan en el output `ecr_repository_urls`.
+
+Los repositorios no se pueden destruir si tienen imágenes (`force_delete = false`), para no perder las que usa prod. Para borrarlos a propósito: `terraform destroy -var force_delete=true`.
 
 Como los tags son inmutables, las imágenes se publican con el SHA del commit, nunca con `latest`.
 
