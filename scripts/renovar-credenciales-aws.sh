@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sube las credenciales de AWS Academy (duran ~4 h, sin OIDC) como secrets del repo.
 # Uso: ./scripts/renovar-credenciales-aws.sh [--repo owner/nombre] [--profile perfil] [--dry-run]
-# Requiere aws v2 y gh con sesión iniciada.
+# Requiere aws v2 y gh con sesión iniciada (con --dry-run alcanza con aws).
 
 set -euo pipefail
 
@@ -19,13 +19,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for cmd in aws gh; do
+REQUIRED=(aws)
+[[ "$DRY_RUN" == true ]] || REQUIRED+=(gh)
+
+for cmd in "${REQUIRED[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Falta el comando: $cmd" >&2; exit 1; }
 done
-
-if [[ -z "$REPO" ]]; then
-  REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-fi
 
 get() { aws configure get "$1" --profile "$PROFILE" 2>/dev/null || true; }
 
@@ -46,12 +45,23 @@ if ! ACCOUNT="$(AWS_PROFILE="$PROFILE" aws sts get-caller-identity --query Accou
   exit 1
 fi
 
-echo "Credenciales válidas (cuenta $ACCOUNT). Repositorio: $REPO"
+echo "Credenciales válidas (cuenta $ACCOUNT)."
 
 if [[ "$DRY_RUN" == true ]]; then
   echo "[dry-run] Se actualizarían: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN"
   exit 0
 fi
+
+STATE_BUCKET="tero-tfstate"
+if ! AWS_PROFILE="$PROFILE" aws s3api head-bucket --bucket "$STATE_BUCKET" >/dev/null 2>&1; then
+  echo "Estas credenciales (cuenta $ACCOUNT) no son de la cuenta compartida: no acceden al bucket $STATE_BUCKET. No se subió nada." >&2
+  exit 1
+fi
+
+if [[ -z "$REPO" ]]; then
+  REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+fi
+echo "Repositorio: $REPO"
 
 # El valor entra por stdin: no queda en la línea de comandos ni en el historial
 set_secret() {
