@@ -85,6 +85,22 @@ terraform plan
 
 Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl`.
 
+### 3. Repositorios ECR (stack compartido, se aplica una sola vez)
+
+Los repositorios de imágenes son los mismos para dev, test y prod, así que viven en un stack aparte (`infra/shared/`) con su propio state (`shared/terraform.tfstate`). Se aplica una sola vez, no por ambiente:
+
+```bash
+cd infra/shared
+terraform init
+terraform apply
+```
+
+Crea un repositorio por servicio (`tero/ui`, `tero/catalog`, `tero/cart`, `tero/orders`, `tero/checkout`, `tero/admin`) con tags inmutables y escaneo al hacer push. La política de limpieza borra las imágenes sin tag después de 1 día y conserva las últimas 30 por repositorio. Las URLs quedan en el output `ecr_repository_urls`.
+
+Los repositorios no se pueden destruir si tienen imágenes (`force_delete = false`), para no perder las que usa prod. Para borrarlos a propósito: `terraform destroy -var force_delete=true`.
+
+Como los tags son inmutables, las imágenes se publican con el SHA del commit, nunca con `latest`.
+
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
