@@ -13,6 +13,11 @@ variable "project" {
 variable "environment" {
   type        = string
   description = "Ambiente: dev, test o prod"
+
+  validation {
+    condition     = contains(["dev", "test", "prod"], var.environment)
+    error_message = "El ambiente debe ser dev, test o prod."
+  }
 }
 
 variable "vpc_cidr" {
