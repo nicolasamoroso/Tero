@@ -92,10 +92,12 @@ Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bu
 ```bash
 cd infra
 terraform init -backend-config=envs/backend-dev.hcl
-terraform plan
+terraform plan -var-file=envs/dev.tfvars
 ```
 
-Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl`.
+Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`.
+
+Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl` y usar `-var-file=envs/<ambiente>.tfvars`.
 
 ### 3. Repositorios ECR (stack compartido, se aplica una sola vez)
 
