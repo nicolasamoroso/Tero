@@ -17,3 +17,28 @@ output "private_subnet_ids" {
   description = "Subnets privadas (RDS y Redis)"
   value       = module.network.private_subnet_ids
 }
+
+output "db_endpoint" {
+  description = "Host de PostgreSQL del ambiente"
+  value       = module.database.endpoint
+}
+
+output "db_master_user_secret_arn" {
+  description = "ARN del secreto con la contraseña de la base (lo referencia la task definition de ECS)"
+  value       = module.database.master_user_secret_arn
+}
+
+output "redis_url" {
+  description = "URL de Redis para checkout (RETAIL_CHECKOUT_PERSISTENCE_REDIS_URL)"
+  value       = module.cache.url
+}
+
+output "admin_password_secret_arn" {
+  description = "ARN del secreto ADMIN_PASSWORD (el valor se carga fuera de Terraform)"
+  value       = aws_secretsmanager_secret.admin_password.arn
+}
+
+output "admin_jwt_secret_arn" {
+  description = "ARN del secreto ADMIN_JWT_SECRET (el valor se carga fuera de Terraform)"
+  value       = aws_secretsmanager_secret.admin_jwt_secret.arn
+}
