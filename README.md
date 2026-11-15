@@ -115,6 +115,41 @@ Los repositorios no se pueden destruir si tienen imágenes (`force_delete = fals
 
 Como los tags son inmutables, las imágenes se publican con el SHA del commit, nunca con `latest`.
 
+### 4. Levantar un ambiente (red, base de datos, Redis y secretos)
+
+Desde `infra/`, con el ambiente elegido:
+
+```bash
+terraform init -reconfigure -backend-config=envs/backend-dev.hcl
+terraform apply -var-file=envs/dev.tfvars
+```
+
+Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas) y los secretos del panel de admin. RDS y ElastiCache tardan unos 15 minutos en crearse.
+
+**La contraseña de la base no pasa por Terraform:** RDS la genera y la guarda en Secrets Manager (output `db_master_user_secret_arn`).
+
+**Los secretos de admin se crean vacíos.** Después de cada `apply` que los cree, hay que cargarles un valor aleatorio, sin que quede escrito en la terminal.
+
+Git Bash:
+
+```bash
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret-string "$(openssl rand -base64 24)"
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-jwt-secret --secret-string "$(openssl rand -base64 24)"
+```
+
+PowerShell:
+
+```powershell
+$bytes = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); $valor = [Convert]::ToBase64String($bytes)
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret-string $valor
+```
+
+(En PowerShell, repetir con un valor nuevo para `tero/dev/admin-jwt-secret`.) Para otro ambiente, cambiar `dev` por `test` o `prod`.
+
+Los valores por defecto están pensados para Academy, donde todo se destruye y se recrea: la base no tiene protección contra borrado ni snapshot final, y los secretos se borran al instante. En prod se endurecen desde `envs/prod.tfvars` (`db_deletion_protection = true`, `db_skip_final_snapshot = false`, `secrets_recovery_window_days = 7`).
+
+Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars`) y volver a crear con el mismo `apply`.
+
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
@@ -127,6 +162,7 @@ Como los tags son inmutables, las imágenes se publican con el SHA del commit, n
   Con `--dry-run` solo valida las credenciales, sin subir nada. Hay que correrlo únicamente con las credenciales de la cuenta compartida: con las de otra cuenta, el pipeline dejaría de encontrar el bucket del state.
 - No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
 - Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
+- Las credenciales se anulan cuando termina la sesión del lab o alguien hace *End Lab* / *Start Lab* (error `voc-cancel-cred`). Hay que copiarlas de nuevo, y avisar al equipo antes de reiniciar el lab.
 
 ---
 
