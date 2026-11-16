@@ -106,4 +106,5 @@ module "service" {
   security_group_ids            = [module.network.services_security_group_id]
   environment                   = each.value.environment
   secrets                       = each.value.secrets
+  target_group_arn              = lookup(module.alb.target_group_arns, each.key, null)
 }
