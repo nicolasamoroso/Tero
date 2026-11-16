@@ -59,3 +59,14 @@ variable "secrets_recovery_window_days" {
     error_message = "Tiene que ser 0 o un valor entre 7 y 30 (lo que permite Secrets Manager)."
   }
 }
+
+variable "image_tag" {
+  type        = string
+  description = "Tag de las imágenes en ECR (el SHA del commit). Los tags son inmutables, no existe latest"
+}
+
+variable "admin_username" {
+  type        = string
+  description = "Usuario del panel de admin (ADMIN_USERNAME). No es secreto, la contraseña sí"
+  default     = "admin"
+}
