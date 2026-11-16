@@ -92,10 +92,10 @@ Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bu
 ```bash
 cd infra
 terraform init -backend-config=envs/backend-dev.hcl
-terraform plan -var-file=envs/dev.tfvars
+terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha>
 ```
 
-Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`.
+Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`. `image_tag` es el tag de las imágenes en ECR (el SHA del commit) y es obligatorio, porque los tags son inmutables y no existe `latest`.
 
 Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl` y usar `-var-file=envs/<ambiente>.tfvars`.
 
@@ -121,10 +121,10 @@ Desde `infra/`, con el ambiente elegido:
 
 ```bash
 terraform init -reconfigure -backend-config=envs/backend-dev.hcl
-terraform apply -var-file=envs/dev.tfvars
+terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha>
 ```
 
-Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas) y los secretos del panel de admin. RDS y ElastiCache tardan unos 15 minutos en crearse.
+Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas), los secretos del panel de admin, el cluster ECS y los seis servicios (ui, catalog, carts, orders, checkout y admin). RDS y ElastiCache tardan unos 15 minutos en crearse.
 
 **La contraseña de la base no pasa por Terraform:** RDS la genera y la guarda en Secrets Manager (output `db_master_user_secret_arn`).
 
@@ -148,7 +148,7 @@ aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret
 
 Los valores por defecto están pensados para Academy, donde todo se destruye y se recrea: la base no tiene protección contra borrado ni snapshot final, y los secretos se borran al instante. En prod se endurecen desde `envs/prod.tfvars` (`db_deletion_protection = true`, `db_skip_final_snapshot = false`, `secrets_recovery_window_days = 7`).
 
-Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars`) y volver a crear con el mismo `apply`.
+Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha>`) y volver a crear con el mismo `apply`.
 
 ### Limitaciones de AWS Academy
 
