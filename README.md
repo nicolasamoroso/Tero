@@ -92,7 +92,7 @@ Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bu
 ```bash
 cd infra
 terraform init -backend-config=envs/backend-dev.hcl
-terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha>
+terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
 ```
 
 Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`. `image_tag` es el tag de las imágenes en ECR (el SHA del commit) y es obligatorio, porque los tags son inmutables y no existe `latest`.
@@ -121,8 +121,10 @@ Desde `infra/`, con el ambiente elegido:
 
 ```bash
 terraform init -reconfigure -backend-config=envs/backend-dev.hcl
-terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha>
+terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
 ```
+
+`admin_ingress_cidr` es el único origen que puede entrar al panel de admin (puerto 8081 del ALB). Tu IP: `curl -s https://checkip.amazonaws.com`. La UI es pública en el puerto 80. Las URLs salen en los outputs `alb_url` y `alb_admin_url`.
 
 Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas), los secretos del panel de admin, el cluster ECS y los seis servicios (ui, catalog, carts, orders, checkout y admin). RDS y ElastiCache tardan unos 15 minutos en crearse.
 
@@ -148,7 +150,17 @@ aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret
 
 Los valores por defecto están pensados para Academy, donde todo se destruye y se recrea: la base no tiene protección contra borrado ni snapshot final, y los secretos se borran al instante. En prod se endurecen desde `envs/prod.tfvars` (`db_deletion_protection = true`, `db_skip_final_snapshot = false`, `secrets_recovery_window_days = 7`).
 
-Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha>`) y volver a crear con el mismo `apply`.
+Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32`) y volver a crear con el mismo `apply`.
+
+### 5. Inicializar la base (una vez por ambiente)
+
+RDS arranca vacío: solo existe `orders`. El script `init-db.sql` crea `catalogdb`, `cartdb`, los permisos y la tabla `cart_items`. Como RDS está en subnets privadas, se corre con una task one-off de ECS (imagen `postgres:16.13`) dentro de la VPC. Desde la raíz del repo, con las credenciales de la cuenta compartida y después del `apply`:
+
+```bash
+./scripts/init-db.sh
+```
+
+Imprime los logs y termina con código 0 si salió bien. Es idempotente: se puede repetir sin errores. Hay que hacerlo en cada ambiente nuevo (`dev`, `test`, `prod`), apuntando `terraform` al ambiente con `init -reconfigure` como en el paso 2. Si los servicios `catalog`, `carts` u `orders` fallan al arrancar por falta de tablas o bases, es lo que falta ejecutar.
 
 ### Limitaciones de AWS Academy
 

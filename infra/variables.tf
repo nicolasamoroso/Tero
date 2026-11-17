@@ -70,3 +70,13 @@ variable "admin_username" {
   description = "Usuario del panel de admin (ADMIN_USERNAME). No es secreto, la contraseña sí"
   default     = "admin"
 }
+
+variable "admin_ingress_cidr" {
+  type        = string
+  description = "Origen permitido hacia el panel de admin en el ALB (por ejemplo 203.0.113.7/32). No se versiona: se pasa con -var"
+
+  validation {
+    condition     = can(cidrnetmask(var.admin_ingress_cidr))
+    error_message = "Tiene que ser un CIDR IPv4 válido, por ejemplo 203.0.113.7/32."
+  }
+}
