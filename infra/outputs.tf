@@ -42,3 +42,13 @@ output "admin_jwt_secret_arn" {
   description = "ARN del secreto ADMIN_JWT_SECRET (el valor se carga fuera de Terraform)"
   value       = aws_secretsmanager_secret.admin_jwt_secret.arn
 }
+
+output "alb_url" {
+  description = "URL pública de la UI"
+  value       = module.alb.url
+}
+
+output "alb_admin_url" {
+  description = "URL del panel de admin (restringida por IP)"
+  value       = module.alb.admin_url
+}
