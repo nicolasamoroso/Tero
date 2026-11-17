@@ -22,15 +22,23 @@ TASK_ARN=$(aws ecs run-task \
   --task-definition "$TASKDEF" \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}" \
   --query 'tasks[0].taskArn' --output text)
+TASK_ID="${TASK_ARN##*/}"
 echo "Task iniciada: $TASK_ARN"
 
 aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
 
 CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
   --query 'tasks[0].containers[0].exitCode' --output text)
+REASON=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+  --query 'tasks[0].[stoppedReason,containers[0].reason]' --output text)
 
+# Solo los logs de esta task (el stream se llama db-init/db-init/<id de la task>)
 echo "---- logs ----"
-aws logs tail "$LOGGROUP" --since 15m || true
-echo "---- código de salida: $CODE ----"
+aws logs tail "$LOGGROUP" --since 15m --log-stream-name-prefix "db-init/db-init/$TASK_ID" || true
 
-[ "$CODE" = "0" ]
+if [ "$CODE" != "0" ]; then
+  echo "---- la task falló (exitCode: $CODE) ----" >&2
+  echo "Motivo: $REASON" >&2
+  exit 1
+fi
+echo "---- código de salida: 0 ----"

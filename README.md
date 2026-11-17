@@ -152,7 +152,7 @@ Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`ter
 
 ### 5. Inicializar la base (una vez por ambiente)
 
-RDS arranca vacío: solo existe `orders`. El script `init-db.sql` crea `catalogdb`, `cartdb`, los permisos y la tabla `cart_items`. Como RDS está en subnets privadas, se corre con una task one-off de ECS (imagen `postgres:16`) dentro de la VPC. Desde la raíz del repo, con las credenciales de la cuenta compartida y después del `apply`:
+RDS arranca vacío: solo existe `orders`. El script `init-db.sql` crea `catalogdb`, `cartdb`, los permisos y la tabla `cart_items`. Como RDS está en subnets privadas, se corre con una task one-off de ECS (imagen `postgres:16.13`) dentro de la VPC. Desde la raíz del repo, con las credenciales de la cuenta compartida y después del `apply`:
 
 ```bash
 ./scripts/init-db.sh

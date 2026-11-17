@@ -19,7 +19,7 @@ resource "aws_ecs_task_definition" "db_init" {
   container_definitions = jsonencode([
     {
       name       = "db-init"
-      image      = "postgres:16"
+      image      = "postgres:16.13"
       essential  = true
       entryPoint = ["sh", "-c"]
       # El script viaja en base64 y psql lo lee por stdin; tr saca los CR por si el archivo tiene CRLF
