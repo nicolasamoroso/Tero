@@ -88,6 +88,14 @@ resource "aws_security_group" "alb" {
   tags = merge(local.common_tags, { Name = "${var.name}-alb-sg" })
 }
 
+resource "aws_security_group" "internal_alb" {
+  name        = "${var.name}-internal-alb"
+  description = "Load balancer interno, para que los servicios se llamen entre si"
+  vpc_id      = aws_vpc.this.id
+
+  tags = merge(local.common_tags, { Name = "${var.name}-internal-alb-sg" })
+}
+
 resource "aws_security_group" "services" {
   name        = "${var.name}-services"
   description = "Servicios de Tero en ECS Fargate"
@@ -131,6 +139,16 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_services" {
   referenced_security_group_id = aws_security_group.services.id
 }
 
+# ALB interno: las reglas de entrada (un puerto por servicio) las agrega el modulo internal-alb
+resource "aws_vpc_security_group_egress_rule" "internal_alb_to_services" {
+  security_group_id            = aws_security_group.internal_alb.id
+  description                  = "Hacia los servicios"
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  referenced_security_group_id = aws_security_group.services.id
+}
+
 # Servicios: solo aceptan trafico del ALB y de los otros servicios.
 # Tienen IP publica (no hay NAT), pero ninguna regla permite entrar desde Internet.
 resource "aws_vpc_security_group_ingress_rule" "services_from_alb" {
@@ -140,6 +158,15 @@ resource "aws_vpc_security_group_ingress_rule" "services_from_alb" {
   from_port                    = var.container_port
   to_port                      = var.container_port
   referenced_security_group_id = aws_security_group.alb.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "services_from_internal_alb" {
+  security_group_id            = aws_security_group.services.id
+  description                  = "Desde el ALB interno"
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  referenced_security_group_id = aws_security_group.internal_alb.id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "services_from_services" {

@@ -1,6 +1,6 @@
 variable "name" {
   type        = string
-  description = "Nombre del servicio. Es también el nombre DNS interno, por ejemplo catalog para http://catalog:8080"
+  description = "Nombre del servicio, por ejemplo catalog"
 }
 
 variable "prefix" {
@@ -11,11 +11,6 @@ variable "prefix" {
 variable "cluster_arn" {
   type        = string
   description = "ARN del cluster ECS donde corre el servicio"
-}
-
-variable "service_connect_namespace_arn" {
-  type        = string
-  description = "ARN del namespace de Service Connect del cluster"
 }
 
 variable "repository_url" {

@@ -35,10 +35,8 @@ resource "aws_ecs_task_definition" "this" {
 
       portMappings = [
         {
-          name          = "http"
           containerPort = var.container_port
           protocol      = "tcp"
-          appProtocol   = "http"
         }
       ]
 
@@ -68,21 +66,6 @@ resource "aws_ecs_service" "this" {
     subnets          = var.subnet_ids
     security_groups  = var.security_group_ids
     assign_public_ip = var.assign_public_ip
-  }
-
-  service_connect_configuration {
-    enabled   = true
-    namespace = var.service_connect_namespace_arn
-
-    service {
-      port_name      = "http"
-      discovery_name = var.name
-
-      client_alias {
-        port     = var.container_port
-        dns_name = var.name
-      }
-    }
   }
 
   dynamic "load_balancer" {
