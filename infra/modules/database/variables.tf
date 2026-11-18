@@ -19,6 +19,12 @@ variable "instance_class" {
   default     = "db.t3.micro"
 }
 
+variable "force_ssl" {
+  type        = bool
+  description = "Exigir SSL en las conexiones a la base. Va en false porque catalog y orders se conectan sin SSL"
+  default     = false
+}
+
 variable "engine_version" {
   type        = string
   description = "Versión mayor de PostgreSQL. Es la misma que usa el compose (postgres:16)"

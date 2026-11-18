@@ -13,6 +13,21 @@ resource "aws_db_subnet_group" "this" {
   tags = merge(local.common_tags, { Name = "${var.name}-postgres" })
 }
 
+# PostgreSQL 16 en RDS exige SSL por defecto, pero catalog y orders traen sslmode=disable
+# en su código. Como la app se usa tal cual viene, se desactiva la exigencia de SSL.
+# El tráfico no sale de la VPC: RDS está en subnets privadas y solo acepta a los servicios.
+resource "aws_db_parameter_group" "this" {
+  name   = "${var.name}-postgres${var.engine_version}"
+  family = "postgres${var.engine_version}"
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = var.force_ssl ? "1" : "0"
+  }
+
+  tags = merge(local.common_tags, { Name = "${var.name}-postgres${var.engine_version}" })
+}
+
 resource "aws_db_instance" "this" {
   identifier     = "${var.name}-postgres"
   engine         = "postgres"
@@ -27,6 +42,7 @@ resource "aws_db_instance" "this" {
   manage_master_user_password = true
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
+  parameter_group_name   = aws_db_parameter_group.this.name
   vpc_security_group_ids = [var.security_group_id]
   publicly_accessible    = false
 

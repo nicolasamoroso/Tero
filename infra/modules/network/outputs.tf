@@ -23,6 +23,11 @@ output "alb_security_group_id" {
   value       = aws_security_group.alb.id
 }
 
+output "internal_alb_security_group_id" {
+  description = "ID del security group del ALB interno"
+  value       = aws_security_group.internal_alb.id
+}
+
 output "services_security_group_id" {
   description = "ID del security group de los servicios en Fargate"
   value       = aws_security_group.services.id
