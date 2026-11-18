@@ -126,7 +126,7 @@ terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingres
 
 `admin_ingress_cidr` es el único origen que puede entrar al panel de admin (puerto 8081 del ALB). Tu IP: `curl -s https://checkip.amazonaws.com`. La UI es pública en el puerto 80. Las URLs salen en los outputs `alb_url` y `alb_admin_url`.
 
-Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas), los secretos del panel de admin, el cluster ECS y los seis servicios (ui, catalog, carts, orders, checkout y admin). RDS y ElastiCache tardan unos 15 minutos en crearse.
+Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas), los secretos del panel de admin, el cluster ECS y los seis servicios (ui, catalog, carts, orders, checkout y admin). Los servicios se llaman entre sí a través de un ALB interno, con un puerto por servicio (catalog 8082, carts 8083, orders 8084 y checkout 8085), porque AWS Academy no permite Service Connect. RDS y ElastiCache tardan unos 15 minutos en crearse.
 
 **La contraseña de la base no pasa por Terraform:** RDS la genera y la guarda en Secrets Manager (output `db_master_user_secret_arn`).
 
@@ -177,6 +177,25 @@ RDS arranca vacío: solo existe `orders`. El script `init-db.sql` crea `catalogd
 
 Imprime los logs y termina con código 0 si salió bien. Es idempotente: se puede repetir sin errores. Hay que hacerlo en cada ambiente nuevo (`dev`, `test`, `prod`), apuntando `terraform` al ambiente con `init -reconfigure` como en el paso 2. Si los servicios `catalog`, `carts` u `orders` fallan al arrancar por falta de tablas o bases, es lo que falta ejecutar.
 
+### 6. Verificar los servicios
+
+En un ambiente nuevo los servicios arrancan antes de que existan las bases y los valores de los secretos, así que los primeros intentos fallan. ECS los reintenta, pero si fallan muchas veces seguidas el circuit breaker corta el despliegue y el servicio queda en `FAILED`. Por eso el orden es `apply`, cargar los secretos (paso 4), `init-db.sh` (paso 5) y después revisar:
+
+```bash
+aws ecs describe-services --cluster tero-dev --services ui catalog carts orders checkout admin \
+  --query "services[].[serviceName,runningCount,deployments[0].rolloutState]" --output text
+```
+
+Los seis tienen que estar en `COMPLETED` con una tarea corriendo. Si alguno quedó en `FAILED`, se relanza con:
+
+```bash
+aws ecs update-service --cluster tero-dev --service <servicio> --force-new-deployment
+```
+
+La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (usuario `admin`, la contraseña se lee con `aws secretsmanager get-secret-value --secret-id tero/dev/admin-password --query SecretString --output text`).
+
+`carts` abre una sola conexión a la base al arrancar y no la recupera si se corta (reinicio o mantenimiento de RDS). Su `/health` no consulta la base, así que ECS lo sigue viendo sano, pero el carrito responde 500 con `connection already closed` en los logs. Se arregla con el mismo `--force-new-deployment` sobre `carts`.
+
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
@@ -188,6 +207,7 @@ Imprime los logs y termina con código 0 si salió bien. Es idempotente: se pued
 
   Con `--dry-run` solo valida las credenciales, sin subir nada. Hay que correrlo únicamente con las credenciales de la cuenta compartida: con las de otra cuenta, el pipeline dejaría de encontrar el bucket del state.
 - No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
+- No se pueden crear namespaces de Cloud Map, así que no sirven Service Connect ni el service discovery de ECS. Los servicios se llaman entre sí por un ALB interno, que es un segundo ALB por ambiente y suma costo por hora mientras el ambiente está levantado. Por eso conviene hacer `terraform destroy` al terminar el día.
 - Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
 - Las credenciales se anulan cuando termina la sesión del lab o alguien hace *End Lab* / *Start Lab* (error `voc-cancel-cred`). Hay que copiarlas de nuevo, y avisar al equipo antes de reiniciar el lab.
 

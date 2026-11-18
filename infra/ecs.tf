@@ -19,10 +19,10 @@ locals {
     ui = {
       repository = "ui"
       environment = {
-        RETAIL_UI_ENDPOINTS_CATALOG  = "http://catalog:8080"
-        RETAIL_UI_ENDPOINTS_CARTS    = "http://carts:8080"
-        RETAIL_UI_ENDPOINTS_CHECKOUT = "http://checkout:8080"
-        RETAIL_UI_ENDPOINTS_ORDERS   = "http://orders:8080"
+        RETAIL_UI_ENDPOINTS_CATALOG  = module.internal_alb.urls["catalog"]
+        RETAIL_UI_ENDPOINTS_CARTS    = module.internal_alb.urls["carts"]
+        RETAIL_UI_ENDPOINTS_CHECKOUT = module.internal_alb.urls["checkout"]
+        RETAIL_UI_ENDPOINTS_ORDERS   = module.internal_alb.urls["orders"]
       }
       secrets = {}
     }
@@ -70,7 +70,7 @@ locals {
       environment = {
         RETAIL_CHECKOUT_PERSISTENCE_PROVIDER  = "redis"
         RETAIL_CHECKOUT_PERSISTENCE_REDIS_URL = module.cache.url
-        RETAIL_CHECKOUT_ENDPOINTS_ORDERS      = "http://orders:8080"
+        RETAIL_CHECKOUT_ENDPOINTS_ORDERS      = module.internal_alb.urls["orders"]
       }
       secrets = {}
     }
@@ -95,20 +95,19 @@ module "service" {
   source   = "./modules/ecs-service"
   for_each = local.services
 
-  name                          = each.key
-  prefix                        = "${var.project}-${var.environment}"
-  cluster_arn                   = module.ecs_cluster.cluster_arn
-  service_connect_namespace_arn = module.ecs_cluster.service_connect_namespace_arn
-  repository_url                = data.aws_ecr_repository.service[each.key].repository_url
-  image_tag                     = var.image_tag
-  role_arn                      = data.aws_iam_role.lab.arn
-  subnet_ids                    = module.network.public_subnet_ids
-  security_group_ids            = [module.network.services_security_group_id]
-  environment                   = each.value.environment
-  secrets                       = each.value.secrets
-  target_group_arn              = lookup(module.alb.target_group_arns, each.key, null)
-  cpu                           = var.service_cpu
-  memory                        = var.service_memory
-  desired_count                 = var.service_desired_count
-  log_retention_days            = var.log_retention_days
+  name               = each.key
+  prefix             = "${var.project}-${var.environment}"
+  cluster_arn        = module.ecs_cluster.cluster_arn
+  repository_url     = data.aws_ecr_repository.service[each.key].repository_url
+  image_tag          = var.image_tag
+  role_arn           = data.aws_iam_role.lab.arn
+  subnet_ids         = module.network.public_subnet_ids
+  security_group_ids = [module.network.services_security_group_id]
+  environment        = each.value.environment
+  secrets            = each.value.secrets
+  target_group_arn   = lookup(merge(module.alb.target_group_arns, module.internal_alb.target_group_arns), each.key, null)
+  cpu                = var.service_cpu
+  memory             = var.service_memory
+  desired_count      = var.service_desired_count
+  log_retention_days = var.log_retention_days
 }
