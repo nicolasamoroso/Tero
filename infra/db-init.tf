@@ -4,7 +4,7 @@
 
 resource "aws_cloudwatch_log_group" "db_init" {
   name              = "/ecs/${var.project}-${var.environment}/db-init"
-  retention_in_days = 7
+  retention_in_days = var.log_retention_days
 }
 
 resource "aws_ecs_task_definition" "db_init" {

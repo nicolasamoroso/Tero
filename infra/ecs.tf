@@ -107,4 +107,8 @@ module "service" {
   environment                   = each.value.environment
   secrets                       = each.value.secrets
   target_group_arn              = lookup(module.alb.target_group_arns, each.key, null)
+  cpu                           = var.service_cpu
+  memory                        = var.service_memory
+  desired_count                 = var.service_desired_count
+  log_retention_days            = var.log_retention_days
 }

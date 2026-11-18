@@ -80,3 +80,42 @@ variable "admin_ingress_cidr" {
     error_message = "Tiene que ser un CIDR IPv4 válido, por ejemplo 203.0.113.7/32."
   }
 }
+
+variable "service_cpu" {
+  type        = number
+  description = "Unidades de CPU de cada task de Fargate (256 = 0,25 vCPU)"
+  default     = 256
+
+  validation {
+    condition     = contains([256, 512, 1024, 2048, 4096], var.service_cpu)
+    error_message = "Fargate acepta 256, 512, 1024, 2048 o 4096."
+  }
+}
+
+variable "service_memory" {
+  type        = number
+  description = "Memoria de cada task de Fargate en MiB (tiene que ser una combinación válida con la CPU)"
+  default     = 512
+}
+
+variable "service_desired_count" {
+  type        = number
+  description = "Cantidad de tasks por servicio. Con 2 o más, cada servicio queda repartido en las dos zonas"
+  default     = 1
+
+  validation {
+    condition     = var.service_desired_count >= 1
+    error_message = "Tiene que haber al menos 1 task por servicio."
+  }
+}
+
+variable "log_retention_days" {
+  type        = number
+  description = "Días que se conservan los logs de los servicios y de la inicialización de la base en CloudWatch"
+  default     = 7
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365], var.log_retention_days)
+    error_message = "CloudWatch solo acepta ciertos valores: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180 o 365."
+  }
+}
