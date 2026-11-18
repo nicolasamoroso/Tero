@@ -192,6 +192,7 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 
   Con `--dry-run` solo valida las credenciales, sin subir nada. Hay que correrlo únicamente con las credenciales de la cuenta compartida: con las de otra cuenta, el pipeline dejaría de encontrar el bucket del state.
 - No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
+- No se pueden crear namespaces de Cloud Map, así que no sirven Service Connect ni el service discovery de ECS. Los servicios se llaman entre sí por un ALB interno, que es un segundo ALB por ambiente y suma costo por hora mientras el ambiente está levantado. Por eso conviene hacer `terraform destroy` al terminar el día.
 - Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
 - Las credenciales se anulan cuando termina la sesión del lab o alguien hace *End Lab* / *Start Lab* (error `voc-cancel-cred`). Hay que copiarlas de nuevo, y avisar al equipo antes de reiniciar el lab.
 
