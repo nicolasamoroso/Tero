@@ -1,7 +1,7 @@
 environment = "prod"
 vpc_cidr    = "10.30.0.0/16"
 
-# Servicios: 2 tasks por servicio (una en cada zona) y más recursos
+# Servicios: 2 tasks por servicio (ECS las reparte entre las zonas) y más recursos
 service_cpu           = 512
 service_memory        = 1024
 service_desired_count = 2

@@ -100,7 +100,7 @@ variable "service_memory" {
 
 variable "service_desired_count" {
   type        = number
-  description = "Cantidad de tasks por servicio. Con 2 o más, cada servicio queda repartido en las dos zonas"
+  description = "Cantidad de tasks por servicio. Con 2 o más, ECS las reparte entre las zonas (lo intenta, no lo garantiza)"
   default     = 1
 
   validation {
