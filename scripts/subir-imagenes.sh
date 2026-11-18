@@ -40,7 +40,7 @@ for svc in "${SERVICES[@]}"; do
     continue
   fi
   echo "Construyendo tero/$svc:$TAG"
-  docker build --platform linux/amd64 -t "$REGISTRY/tero/$svc:$TAG" "$ROOT/src/$svc"
+  docker build --platform linux/amd64 --provenance=false --sbom=false -t "$REGISTRY/tero/$svc:$TAG" "$ROOT/src/$svc"
   docker push "$REGISTRY/tero/$svc:$TAG"
 done
 
