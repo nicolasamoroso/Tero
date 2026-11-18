@@ -46,11 +46,18 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [var.security_group_id]
   publicly_accessible    = false
 
-  backup_retention_period   = var.backup_retention_days
-  deletion_protection       = var.deletion_protection
-  skip_final_snapshot       = var.skip_final_snapshot
-  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-postgres-final"
+  backup_retention_period = var.backup_retention_days
+  deletion_protection     = var.deletion_protection
+  skip_final_snapshot     = var.skip_final_snapshot
+  # Con fecha en el nombre, cada vez que se destruye la base queda un snapshot distinto:
+  # con un nombre fijo, el segundo destroy falla con DBSnapshotAlreadyExists
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name}-postgres-final-${formatdate("YYYYMMDDhhmm", timestamp())}"
   apply_immediately         = true
 
   tags = merge(local.common_tags, { Name = "${var.name}-postgres" })
+
+  lifecycle {
+    # timestamp() cambia en cada plan: el nombre se fija al crear la base y no se actualiza después
+    ignore_changes = [final_snapshot_identifier]
+  }
 }

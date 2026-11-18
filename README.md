@@ -150,6 +150,37 @@ aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret
 
 Los valores por defecto están pensados para Academy, donde todo se destruye y se recrea: la base no tiene protección contra borrado ni snapshot final, y los secretos se borran al instante. En prod se endurecen desde `envs/prod.tfvars` (`db_deletion_protection = true`, `db_skip_final_snapshot = false`, `secrets_recovery_window_days = 7`).
 
+Cada ambiente tiene sus valores en `infra/envs/<ambiente>.tfvars`:
+
+| | dev | test | prod |
+|--|--|--|--|
+| Tasks por servicio | 1 | 1 | 2, repartidas entre las zonas |
+| CPU / memoria por task | 256 / 512 MiB | 256 / 512 MiB | 512 / 1024 MiB |
+| Retención de logs | 7 días | 14 días | 30 días |
+| Protección contra borrado de la base | no | no | sí |
+| Snapshot final al destruir | no | no | sí |
+| Recuperación de secretos borrados | al instante | al instante | 7 días |
+
+`image_tag` y `admin_ingress_cidr` no van en los `.tfvars`: el primero cambia en cada deploy y el segundo es la IP de quien despliega. Se pasan con `-var`.
+
+Para destruir prod hay que sacar primero la protección de la base: `terraform apply -var-file=envs/prod.tfvars -var db_deletion_protection=false ...` y después el `destroy`. Al destruir prod quedan dos cosas a tener en cuenta:
+
+- **Snapshot final:** RDS guarda un snapshot `tero-prod-postgres-final-<fecha>`, uno por cada vez que se destruye. Ocupa espacio y gasta presupuesto, así que conviene borrar los que ya no sirvan:
+
+  ```bash
+  aws rds describe-db-snapshots --snapshot-type manual --query "DBSnapshots[].DBSnapshotIdentifier"
+  aws rds delete-db-snapshot --db-snapshot-identifier tero-prod-postgres-final-<fecha>
+  ```
+
+- **Secretos de admin:** quedan reservados 7 días (`secrets_recovery_window_days`). Si se vuelve a levantar prod antes, el `apply` falla porque el nombre ya existe. Hay dos salidas: recuperarlos (Terraform los vuelve a tomar, con su valor) o borrarlos del todo (hay que volver a cargarles un valor):
+
+  ```bash
+  aws secretsmanager restore-secret --secret-id tero/prod/admin-password
+  aws secretsmanager delete-secret --secret-id tero/prod/admin-password --force-delete-without-recovery
+  ```
+
+  Lo mismo para `tero/prod/admin-jwt-secret`.
+
 Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32`) y volver a crear con el mismo `apply`.
 
 ### 5. Inicializar la base (una vez por ambiente)
