@@ -149,7 +149,7 @@ resource "aws_vpc_security_group_egress_rule" "internal_alb_to_services" {
   referenced_security_group_id = aws_security_group.services.id
 }
 
-# Servicios: solo aceptan trafico del ALB y de los otros servicios.
+# Servicios: solo aceptan trafico de los dos ALB (el publico y el interno).
 # Tienen IP publica (no hay NAT), pero ninguna regla permite entrar desde Internet.
 resource "aws_vpc_security_group_ingress_rule" "services_from_alb" {
   security_group_id            = aws_security_group.services.id
@@ -167,15 +167,6 @@ resource "aws_vpc_security_group_ingress_rule" "services_from_internal_alb" {
   from_port                    = var.container_port
   to_port                      = var.container_port
   referenced_security_group_id = aws_security_group.internal_alb.id
-}
-
-resource "aws_vpc_security_group_ingress_rule" "services_from_services" {
-  security_group_id            = aws_security_group.services.id
-  description                  = "Entre servicios"
-  ip_protocol                  = "tcp"
-  from_port                    = var.container_port
-  to_port                      = var.container_port
-  referenced_security_group_id = aws_security_group.services.id
 }
 
 # Salida libre: hace falta para bajar imagenes de ECR y hablar con las APIs de AWS
