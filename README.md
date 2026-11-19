@@ -9,6 +9,12 @@ Tero es una tienda en línea basada en microservicios. Permite explorar un catá
 - [Docker](https://docs.docker.com/get-docker/) 24+
 - [Docker Compose](https://docs.docker.com/compose/install/) v2.20+
 
+Para desplegar en AWS (ver [Despliegue en AWS](#despliegue-en-aws)), además:
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.10 o más nuevo
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) v2
+- Credenciales de AWS con permisos sobre ECS, ECR, RDS, S3, ELB, Secrets Manager, CloudWatch y Lambda (en AWS Academy se usa el rol `LabRole`)
+
 ## Inicio rápido
 
 Crear el archivo de variables a partir del ejemplo y completarlo:
@@ -48,6 +54,178 @@ docker compose up --build <servicio>
 # Ver logs de un servicio
 docker compose logs -f <servicio>
 ```
+
+## Despliegue en AWS
+
+La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
+
+### 0. Credenciales de AWS
+
+Toda la infraestructura vive en una única cuenta de AWS Academy, la de Nicolás. Quien quiera correr `terraform` desde su máquina necesita las credenciales de esa cuenta.
+
+Desde el lab (AWS Details → AWS CLI) se copia el bloque de credenciales a `~/.aws/credentials`. Incluye `aws_session_token`. Para comprobar que funcionan:
+
+```bash
+aws sts get-caller-identity
+```
+
+### 1. Bucket del state de Terraform (se crea una sola vez, a mano)
+
+El state de Terraform se guarda en S3. Es lo único que no se crea con Terraform, porque tiene que existir antes de poder usarlo.
+
+**El bucket `tero-tfstate` ya existe en la cuenta compartida. Si se usan sus credenciales, se puede saltear este paso.**
+
+```bash
+B=tero-tfstate
+aws s3api create-bucket --bucket "$B" --region us-east-1
+aws s3api put-bucket-versioning --bucket "$B" --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket "$B" --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket "$B" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+```
+
+El nombre de un bucket es único en todo AWS. Si `tero-tfstate` ya estuviera tomado, hay que elegir otro y cambiarlo en `infra/backend.tf`.
+
+### 2. Inicializar Terraform para un ambiente
+
+Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bucket. La key se pasa al inicializar:
+
+```bash
+cd infra
+terraform init -backend-config=envs/backend-dev.hcl
+terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
+```
+
+Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`. `image_tag` es el tag de las imágenes en ECR (el SHA del commit) y es obligatorio, porque los tags son inmutables y no existe `latest`.
+
+Para cambiar de ambiente: `terraform init -reconfigure -backend-config=envs/backend-<ambiente>.hcl` y usar `-var-file=envs/<ambiente>.tfvars`.
+
+### 3. Repositorios ECR (stack compartido, se aplica una sola vez)
+
+Los repositorios de imágenes son los mismos para dev, test y prod, así que viven en un stack aparte (`infra/shared/`) con su propio state (`shared/terraform.tfstate`). Se aplica una sola vez, no por ambiente:
+
+```bash
+cd infra/shared
+terraform init
+terraform apply
+```
+
+Crea un repositorio por servicio (`tero/ui`, `tero/catalog`, `tero/cart`, `tero/orders`, `tero/checkout`, `tero/admin`) con tags inmutables y escaneo al hacer push. La política de limpieza borra las imágenes sin tag después de 1 día y conserva las últimas 30 por repositorio. Las URLs quedan en el output `ecr_repository_urls`.
+
+Los repositorios no se pueden destruir si tienen imágenes (`force_delete = false`), para no perder las que usa prod. Para borrarlos a propósito: `terraform destroy -var force_delete=true`.
+
+Como los tags son inmutables, las imágenes se publican con el SHA del commit, nunca con `latest`.
+
+### 4. Levantar un ambiente (red, base de datos, Redis y secretos)
+
+Desde `infra/`, con el ambiente elegido:
+
+```bash
+terraform init -reconfigure -backend-config=envs/backend-dev.hcl
+terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
+```
+
+`admin_ingress_cidr` es el único origen que puede entrar al panel de admin (puerto 8081 del ALB). Tu IP: `curl -s https://checkip.amazonaws.com`. La UI es pública en el puerto 80. Las URLs salen en los outputs `alb_url` y `alb_admin_url`.
+
+Crea la red, PostgreSQL en RDS y Redis en ElastiCache (los dos en las subnets privadas), los secretos del panel de admin, el cluster ECS y los seis servicios (ui, catalog, carts, orders, checkout y admin). Los servicios se llaman entre sí a través de un ALB interno, con un puerto por servicio (catalog 8082, carts 8083, orders 8084 y checkout 8085), porque AWS Academy no permite Service Connect. RDS y ElastiCache tardan unos 15 minutos en crearse.
+
+**La contraseña de la base no pasa por Terraform:** RDS la genera y la guarda en Secrets Manager (output `db_master_user_secret_arn`).
+
+**Los secretos de admin se crean vacíos.** Después de cada `apply` que los cree, hay que cargarles un valor aleatorio, sin que quede escrito en la terminal.
+
+Git Bash:
+
+```bash
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret-string "$(openssl rand -base64 24)"
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-jwt-secret --secret-string "$(openssl rand -base64 24)"
+```
+
+PowerShell:
+
+```powershell
+$bytes = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); $valor = [Convert]::ToBase64String($bytes)
+aws secretsmanager put-secret-value --secret-id tero/dev/admin-password --secret-string $valor
+```
+
+(En PowerShell, repetir con un valor nuevo para `tero/dev/admin-jwt-secret`.) Para otro ambiente, cambiar `dev` por `test` o `prod`.
+
+Los valores por defecto están pensados para Academy, donde todo se destruye y se recrea: la base no tiene protección contra borrado ni snapshot final, y los secretos se borran al instante. En prod se endurecen desde `envs/prod.tfvars` (`db_deletion_protection = true`, `db_skip_final_snapshot = false`, `secrets_recovery_window_days = 7`).
+
+Cada ambiente tiene sus valores en `infra/envs/<ambiente>.tfvars`:
+
+| | dev | test | prod |
+|--|--|--|--|
+| Tasks por servicio | 1 | 1 | 2, repartidas entre las zonas |
+| CPU / memoria por task | 256 / 512 MiB | 256 / 512 MiB | 512 / 1024 MiB |
+| Retención de logs | 7 días | 14 días | 30 días |
+| Protección contra borrado de la base | no | no | sí |
+| Snapshot final al destruir | no | no | sí |
+| Recuperación de secretos borrados | al instante | al instante | 7 días |
+
+`image_tag` y `admin_ingress_cidr` no van en los `.tfvars`: el primero cambia en cada deploy y el segundo es la IP de quien despliega. Se pasan con `-var`.
+
+Para destruir prod hay que sacar primero la protección de la base: `terraform apply -var-file=envs/prod.tfvars -var db_deletion_protection=false ...` y después el `destroy`. Al destruir prod quedan dos cosas a tener en cuenta:
+
+- **Snapshot final:** RDS guarda un snapshot `tero-prod-postgres-final-<fecha>`, uno por cada vez que se destruye. Ocupa espacio y gasta presupuesto, así que conviene borrar los que ya no sirvan:
+
+  ```bash
+  aws rds describe-db-snapshots --snapshot-type manual --query "DBSnapshots[].DBSnapshotIdentifier"
+  aws rds delete-db-snapshot --db-snapshot-identifier tero-prod-postgres-final-<fecha>
+  ```
+
+- **Secretos de admin:** quedan reservados 7 días (`secrets_recovery_window_days`). Si se vuelve a levantar prod antes, el `apply` falla porque el nombre ya existe. Hay dos salidas: recuperarlos (Terraform los vuelve a tomar, con su valor) o borrarlos del todo (hay que volver a cargarles un valor):
+
+  ```bash
+  aws secretsmanager restore-secret --secret-id tero/prod/admin-password
+  aws secretsmanager delete-secret --secret-id tero/prod/admin-password --force-delete-without-recovery
+  ```
+
+  Lo mismo para `tero/prod/admin-jwt-secret`.
+
+Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32`) y volver a crear con el mismo `apply`.
+
+### 5. Inicializar la base (una vez por ambiente)
+
+RDS arranca vacío: solo existe `orders`. El script `init-db.sql` crea `catalogdb`, `cartdb`, los permisos y la tabla `cart_items`. Como RDS está en subnets privadas, se corre con una task one-off de ECS (imagen `postgres:16.13`) dentro de la VPC. Desde la raíz del repo, con las credenciales de la cuenta compartida y después del `apply`:
+
+```bash
+./scripts/init-db.sh
+```
+
+Imprime los logs y termina con código 0 si salió bien. Es idempotente: se puede repetir sin errores. Hay que hacerlo en cada ambiente nuevo (`dev`, `test`, `prod`), apuntando `terraform` al ambiente con `init -reconfigure` como en el paso 2. Si los servicios `catalog`, `carts` u `orders` fallan al arrancar por falta de tablas o bases, es lo que falta ejecutar.
+
+### 6. Verificar los servicios
+
+En un ambiente nuevo los servicios arrancan antes de que existan las bases y los valores de los secretos, así que los primeros intentos fallan. ECS los reintenta, pero si fallan muchas veces seguidas el circuit breaker corta el despliegue y el servicio queda en `FAILED`. Por eso el orden es `apply`, cargar los secretos (paso 4), `init-db.sh` (paso 5) y después revisar:
+
+```bash
+aws ecs describe-services --cluster tero-dev --services ui catalog carts orders checkout admin \
+  --query "services[].[serviceName,runningCount,deployments[0].rolloutState]" --output text
+```
+
+Los seis tienen que estar en `COMPLETED` con una tarea corriendo. Si alguno quedó en `FAILED`, se relanza con:
+
+```bash
+aws ecs update-service --cluster tero-dev --service <servicio> --force-new-deployment
+```
+
+La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (usuario `admin`, la contraseña se lee con `aws secretsmanager get-secret-value --secret-id tero/dev/admin-password --query SecretString --output text`).
+
+`carts` abre una sola conexión a la base al arrancar y no la recupera si se corta (reinicio o mantenimiento de RDS). Su `/health` no consulta la base, así que ECS lo sigue viendo sano, pero el carrito responde 500 con `connection already closed` en los logs. Se arregla con el mismo `--force-new-deployment` sobre `carts`.
+
+### Limitaciones de AWS Academy
+
+- Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
+- El pipeline de GitHub Actions usa esas mismas credenciales como secrets del repo (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`), porque Academy no permite OIDC. Se actualizan con el script, que requiere `aws` y `gh` con sesión iniciada:
+
+  ```bash
+  ./scripts/renovar-credenciales-aws.sh
+  ```
+
+  Con `--dry-run` solo valida las credenciales, sin subir nada. Hay que correrlo únicamente con las credenciales de la cuenta compartida: con las de otra cuenta, el pipeline dejaría de encontrar el bucket del state.
+- No se pueden crear roles de IAM: el código usa el `LabRole` que ya existe.
+- No se pueden crear namespaces de Cloud Map, así que no sirven Service Connect ni el service discovery de ECS. Los servicios se llaman entre sí por un ALB interno, que es un segundo ALB por ambiente y suma costo por hora mientras el ambiente está levantado. Por eso conviene hacer `terraform destroy` al terminar el día.
+- Si el lab se recrea con otra cuenta de AWS, el bucket del state no existe y hay que repetir el paso 1.
+- Las credenciales se anulan cuando termina la sesión del lab o alguien hace *End Lab* / *Start Lab* (error `voc-cancel-cred`). Hay que copiarlas de nuevo, y avisar al equipo antes de reiniciar el lab.
 
 ---
 
