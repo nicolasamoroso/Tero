@@ -1,0 +1,102 @@
+name: CD
+
+# Construye la imagen de cada servicio, la escanea con Trivy y la sube a ECR.
+# - Push a develop: imagen con el SHA corto del commit (el mismo formato que scripts/subir-imagenes.sh).
+# - Tag v*: además del SHA, la imagen lleva el semver del release (por ejemplo v0.2.0).
+on:
+  push:
+    branches: [develop]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  imagen:
+    name: imagen (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [ui, admin, checkout, cart, catalog, orders]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Calcular los tags
+        id: tags
+        run: |
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "semver=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Academy no permite OIDC: se usan las credenciales del lab guardadas como secrets
+      # (se renuevan con scripts/renovar-credenciales-aws.sh)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Definir la imagen
+        id: imagen
+        run: echo "nombre=${{ steps.ecr.outputs.registry }}/tero/${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
+      # Los tags de ECR son inmutables: si la imagen de este commit ya está, no se vuelve a construir
+      - name: Ver si la imagen ya existe
+        id: existe
+        run: |
+          if aws ecr describe-images --repository-name "tero/${{ matrix.service }}" \
+               --image-ids imageTag="${{ steps.tags.outputs.sha }}" >/dev/null 2>&1; then
+            echo "si=true" >> "$GITHUB_OUTPUT"
+            echo "tero/${{ matrix.service }}:${{ steps.tags.outputs.sha }} ya está en ECR, no se construye."
+          else
+            echo "si=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Sin provenance ni SBOM, para que cada tag apunte a una sola imagen
+      - name: Build
+        if: steps.existe.outputs.si == 'false'
+        run: |
+          docker build --provenance=false --sbom=false \
+            -t "${{ steps.imagen.outputs.nombre }}:${{ steps.tags.outputs.sha }}" \
+            "src/${{ matrix.service }}"
+
+      # Gate: si la imagen tiene vulnerabilidades CRITICAL o HIGH con parche disponible, no se sube
+      - name: Trivy image
+        if: steps.existe.outputs.si == 'false'
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ steps.imagen.outputs.nombre }}:${{ steps.tags.outputs.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Push a ECR
+        if: steps.existe.outputs.si == 'false'
+        run: docker push "${{ steps.imagen.outputs.nombre }}:${{ steps.tags.outputs.sha }}"
+
+      # En un release, la misma imagen recibe también el semver (sin reconstruir)
+      - name: Tag del release
+        if: steps.tags.outputs.semver != ''
+        run: |
+          MANIFEST=$(aws ecr batch-get-image --repository-name "tero/${{ matrix.service }}" \
+            --image-ids imageTag="${{ steps.tags.outputs.sha }}" \
+            --query 'images[0].imageManifest' --output text)
+          aws ecr put-image --repository-name "tero/${{ matrix.service }}" \
+            --image-tag "${{ steps.tags.outputs.semver }}" --image-manifest "$MANIFEST" >/dev/null
+          echo "tero/${{ matrix.service }}:${{ steps.tags.outputs.semver }} apunta a ${{ steps.tags.outputs.sha }}"
