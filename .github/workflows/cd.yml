@@ -5,7 +5,7 @@ name: CD
 # - Tag v*: además del SHA, la imagen lleva el semver del release (por ejemplo v0.2.0).
 on:
   push:
-    branches: [develop]
+    branches: [develop, feature/DEV-31-pipeline-cd]
     tags: ['v*']
   workflow_dispatch:
 
