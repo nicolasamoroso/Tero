@@ -22,8 +22,8 @@ jobs:
     outputs:
       services: ${{ steps.filter.outputs.changes }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -62,10 +62,10 @@ jobs:
       run:
         working-directory: src/${{ matrix.service }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ---- Node con npm (ui, admin) ----
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: env.TYPE == 'npm'
         with:
           node-version: 22
@@ -82,11 +82,11 @@ jobs:
         run: npm test --if-present
 
       # ---- Node con Yarn 4 (checkout) ----
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: env.TYPE == 'yarn'
         with:
           node-version: 22
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         if: env.TYPE == 'yarn'
         with:
           path: |
@@ -105,7 +105,7 @@ jobs:
         run: yarn test
 
       # ---- Python (cart) ----
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: env.TYPE == 'python'
         with:
           python-version: '3.12'
@@ -122,7 +122,7 @@ jobs:
         run: python -m pytest --cov=app --cov-report=xml --cov-report=term
 
       # ---- Go (catalog, orders) ----
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         if: env.TYPE == 'go'
         with:
           go-version-file: src/${{ matrix.service }}/go.mod
@@ -139,7 +139,7 @@ jobs:
       # ---- Coverage como artefacto (si se generó) ----
       - name: Subir coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-${{ matrix.service }}
           path: |
