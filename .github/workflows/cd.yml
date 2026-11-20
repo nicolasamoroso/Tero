@@ -78,7 +78,7 @@ jobs:
       # Gate: si la imagen tiene vulnerabilidades CRITICAL o HIGH con parche disponible, no se sube
       - name: Trivy image
         if: steps.existe.outputs.si == 'false'
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.imagen.outputs.nombre }}:${{ steps.tags.outputs.sha }}
           severity: CRITICAL,HIGH
