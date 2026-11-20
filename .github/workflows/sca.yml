@@ -1,0 +1,55 @@
+name: SCA
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sca-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:latest
+
+jobs:
+  trivy-fs:
+    name: trivy-fs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Escanear dependencias con Trivy
+        run: |
+          mkdir -p reports "$RUNNER_TEMP/trivy-cache"
+          trivy() {
+            docker run --rm \
+              -v "$PWD":/work -w /work \
+              -v "$RUNNER_TEMP/trivy-cache":/root/.cache/trivy \
+              "$TRIVY_IMAGE" "$@"
+          }
+
+          # 1) Informativo: todas las CRITICAL/HIGH, incluidas las que no tienen parche
+          trivy fs --scanners vuln --severity CRITICAL,HIGH \
+            --format json --output reports/trivy-sin-filtro.json --exit-code 0 src
+
+          # 2) Reporte de lo que evalúa el gate (solo las que tienen parche)
+          trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --format json --output reports/trivy-gate.json --exit-code 0 src
+
+          # 3) Gate: falla (exit 1) si hay CRITICAL/HIGH con parche disponible
+          trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 src
+
+      - name: Guardar reporte
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: trivy-report
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
