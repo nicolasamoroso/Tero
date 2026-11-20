@@ -9,6 +9,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080
 WORKDIR /app
 COPY --from=build /install /usr/local
 COPY app ./app
+# Parches de seguridad del sistema que todavía no están en la imagen base
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --uid 10001 --no-create-home app
 USER app
 EXPOSE 8080
