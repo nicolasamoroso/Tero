@@ -1,0 +1,153 @@
+name: Infra
+
+# Pipeline de Terraform para el stack de cada ambiente (infra/).
+# - PR que toca infra/: fmt, validate, Checkov y plan de dev (el plan se comenta en el PR).
+# - Push a develop (merge): plan y apply en dev.
+# - test y prod se aplican a mano desde Actions; prod pide aprobación (environment prod).
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente a aplicar
+        type: choice
+        options: [dev, test, prod]
+        default: dev
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.17.0
+  TF_IN_AUTOMATION: 'true'
+
+jobs:
+  # 1) Chequeos que no necesitan AWS
+  checks:
+    name: fmt, validate y Checkov
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      # Por ahora solo informa: DEV-30 corrige o justifica los hallazgos y lo vuelve bloqueante
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          soft_fail: true
+          quiet: true
+
+  # 2) Plan (y apply fuera de los PRs) contra AWS
+  terraform:
+    name: plan y apply (${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }})
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    # Un solo terraform por ambiente a la vez (además del lock del state)
+    concurrency:
+      group: terraform-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Academy no permite OIDC: credenciales del lab guardadas como secrets
+      # (se renuevan con scripts/renovar-credenciales-aws.sh)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config="envs/backend-${ENVIRONMENT}.hcl"
+
+      # El pipeline de infra no cambia la versión de la app: usa el tag que ya corre en el ambiente.
+      # Si todavía no hay servicios, usa el SHA corto del commit (el mismo que publica el CD).
+      - name: Tag de imagen actual
+        id: tag
+        run: |
+          TASKDEF=$(aws ecs describe-services --cluster "tero-${ENVIRONMENT}" --services ui \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null || true)
+          if [[ -n "$TASKDEF" && "$TASKDEF" != "None" ]]; then
+            IMAGE=$(aws ecs describe-task-definition --task-definition "$TASKDEF" \
+              --query 'taskDefinition.containerDefinitions[0].image' --output text)
+            TAG="${IMAGE##*:}"
+          else
+            TAG="${GITHUB_SHA::7}"
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "image_tag: $TAG"
+
+      - name: terraform plan
+        env:
+          TF_VAR_image_tag: ${{ steps.tag.outputs.image_tag }}
+          TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+        run: |
+          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Comentar el plan en el PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('infra/plan.txt', 'utf8');
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (recortado: el plan completo está en el artefacto)';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### Terraform plan (${process.env.ENVIRONMENT})\n\n<details><summary>Ver el plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`
+            });
+
+      - name: Subir el plan
+        uses: actions/upload-artifact@v6
+        with:
+          name: plan-${{ env.ENVIRONMENT }}
+          path: infra/plan.txt
+          retention-days: 14
+
+      # El apply usa exactamente el plan de arriba (tfplan), no uno nuevo
+      - name: terraform apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -input=false -lock-timeout=5m tfplan
