@@ -1,0 +1,46 @@
+name: SAST
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Escanear con Semgrep
+        run: >
+          semgrep scan
+          --config p/default
+          --config p/owasp-top-ten
+          --config p/secrets
+          --severity ERROR
+          --error
+          --metrics=off
+          --json-output=semgrep-report.json
+          --sarif-output=semgrep-report.sarif
+
+      - name: Guardar reporte
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: semgrep-report
+          path: |
+            semgrep-report.json
+            semgrep-report.sarif
+          if-no-files-found: warn
+          retention-days: 30
