@@ -82,9 +82,7 @@ func main() {
 	p := ginprometheus.NewPrometheus("gin")
 	p.Use(r)
 
-	r.GET("/health", func(c *gin.Context) {
-		c.String(http.StatusOK, "OK")
-	})
+	r.GET("/health", health)
 
 	r.GET("/orders", listOrders)
 	r.POST("/orders", createOrder)
@@ -93,6 +91,10 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func health(c *gin.Context) {
+	c.String(http.StatusOK, "OK")
 }
 
 func createOrder(c *gin.Context) {
