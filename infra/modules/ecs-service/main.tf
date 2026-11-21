@@ -14,11 +14,14 @@ locals {
 }
 
 resource "aws_cloudwatch_log_group" "this" {
+  #checkov:skip=CKV_AWS_158:CloudWatch ya encripta los logs con claves administradas por AWS; una clave KMS propia suma costo
+  #checkov:skip=CKV_AWS_338:La retención se define por ambiente (log_retention_days); un año de logs en Academy es costo sin uso
   name              = "/ecs/${var.prefix}/${var.name}"
   retention_in_days = var.log_retention_days
 }
 
 resource "aws_ecs_task_definition" "this" {
+  #checkov:skip=CKV_AWS_249:Academy solo permite usar LabRole, así que el rol de ejecución y el de la task son el mismo
   family                   = local.family
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -56,6 +59,7 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_service" "this" {
+  #checkov:skip=CKV_AWS_333:Sin NAT Gateway por costo (ADR 0001): las tasks necesitan IP pública para llegar a ECR, Secrets Manager y CloudWatch; su security group solo acepta tráfico de los ALB
   name            = var.name
   cluster         = var.cluster_arn
   task_definition = aws_ecs_task_definition.this.arn

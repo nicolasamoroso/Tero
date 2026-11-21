@@ -6,17 +6,25 @@ locals {
 }
 
 resource "aws_lb" "this" {
+  #checkov:skip=CKV_AWS_150:Sin protección contra borrado para poder apagar los ambientes con destroy y cuidar el presupuesto de Academy
+  #checkov:skip=CKV_AWS_91:Los access logs necesitan un bucket S3 con política para ELB; los logs de cada servicio ya van a CloudWatch
+  #checkov:skip=CKV2_AWS_20:Sin dominio propio no hay certificado de ACM, así que no hay listener HTTPS al que redirigir (ADR 0003)
+  #checkov:skip=CKV2_AWS_28:WAF tiene costo fijo por web ACL y por regla; el ingreso ya está limitado por el security group
   name               = "${var.name}-alb"
   load_balancer_type = "application"
   internal           = false
   subnets            = var.subnet_ids
   security_groups    = [var.security_group_id]
 
+  # Descarta los requests con headers HTTP inválidos en vez de pasarlos a los servicios
+  drop_invalid_header_fields = true
+
   tags = merge(local.common_tags, { Name = "${var.name}-alb" })
 }
 
 # Fargate con awsvpc se registra por IP, por eso target_type = "ip"
 resource "aws_lb_target_group" "this" {
+  #checkov:skip=CKV_AWS_378:El ALB termina el tráfico y habla con las tasks dentro de la VPC; los contenedores sirven HTTP
   for_each = toset(["ui", "admin"])
 
   name                 = "${var.name}-${each.key}"
@@ -39,6 +47,8 @@ resource "aws_lb_target_group" "this" {
 }
 
 resource "aws_lb_listener" "ui" {
+  #checkov:skip=CKV_AWS_2:Sin dominio propio no hay certificado de ACM para un listener HTTPS (ADR 0003)
+  #checkov:skip=CKV_AWS_103:Sin HTTPS no aplica la política de TLS
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
@@ -50,6 +60,8 @@ resource "aws_lb_listener" "ui" {
 }
 
 resource "aws_lb_listener" "admin" {
+  #checkov:skip=CKV_AWS_2:Sin dominio propio no hay certificado de ACM; el panel de admin queda limitado por IP en el security group (ADR 0003)
+  #checkov:skip=CKV_AWS_103:Sin HTTPS no aplica la política de TLS
   load_balancer_arn = aws_lb.this.arn
   port              = var.admin_listener_port
   protocol          = "HTTP"
