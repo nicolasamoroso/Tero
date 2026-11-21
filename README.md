@@ -55,6 +55,16 @@ docker compose up --build <servicio>
 docker compose logs -f <servicio>
 ```
 
+## Tests
+
+Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.yml`) y generan el reporte de coverage que usa Sonar. No necesitan base de datos: usan las implementaciones en memoria de cada servicio (SQLite en catalog y orders).
+
+| Servicio | Cómo correrlos (desde la carpeta del servicio) | Reporte de coverage |
+|--|--|--|
+| cart | `python -m venv .venv`, `.venv/Scripts/python -m pip install -r requirements-dev.txt` y `.venv/Scripts/python -m pytest --cov=app --cov-report=xml` | `coverage.xml` |
+| catalog, orders | `go test ./... -coverpkg=./... -coverprofile=coverage.out` (sin Go instalado: `docker run --rm -v "$PWD:/src" -w /src golang:1.26.11 sh -c "go test ./..."`) | `coverage.out` |
+| checkout | `node .yarn/releases/yarn-4.11.0.cjs test` | `coverage/lcov.info` |
+
 ## Despliegue en AWS
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
