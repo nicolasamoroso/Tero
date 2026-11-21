@@ -42,7 +42,7 @@ jobs:
       - name: Coverage de cart
         working-directory: src/cart
         run: |
-          pip install -r requirements-dev.txt
+          pip install --only-binary :all: -r requirements-dev.txt
           python -m pytest --cov=app --cov-report=xml
 
       - uses: actions/setup-node@v5
@@ -51,6 +51,9 @@ jobs:
 
       - name: Coverage de checkout
         working-directory: src/checkout
+        # Sin scripts de instalación de las dependencias: los tests no los necesitan
+        env:
+          YARN_ENABLE_SCRIPTS: 'false'
         run: |
           yarn install --immutable
           yarn test
