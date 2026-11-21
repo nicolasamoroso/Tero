@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
@@ -58,7 +58,7 @@ jobs:
 
       # Por ahora solo informa: DEV-30 corrige o justifica los hallazgos y lo vuelve bloqueante
       - name: Checkov
-        uses: bridgecrewio/checkov-action@v12
+        uses: bridgecrewio/checkov-action@b17b606d6ec72bb8ba5721ad5b7e340b80a9fc39 # v12.3142.0
         with:
           directory: infra
           framework: terraform
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
@@ -115,6 +115,22 @@ jobs:
             TAG="${IMAGE##*:}"
           else
             TAG="${GITHUB_SHA::7}"
+            # Servicios nuevos: si el apply los crea antes de que el CD suba las imágenes de este SHA,
+            # las tasks fallan, el circuit breaker marca el deployment como FAILED y, sin versión
+            # anterior a la cual volver, el servicio queda en 0. Por eso se espera a que estén en ECR.
+            # En los planes de PR no se espera: no crean nada y el CD no publica el SHA de un PR.
+            if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+              for SERVICE in ui admin checkout cart catalog orders; do
+                for i in $(seq 1 40); do
+                  aws ecr describe-images --repository-name "tero/${SERVICE}" \
+                    --image-ids imageTag="$TAG" >/dev/null 2>&1 && continue 2
+                  echo "Esperando tero/${SERVICE}:${TAG} en ECR (${i}/40)..."
+                  sleep 30
+                done
+                echo "::error::tero/${SERVICE}:${TAG} no está en ECR después de 20 minutos. Correr el CD para este commit y volver a correr este workflow."
+                exit 1
+              done
+            fi
           fi
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "image_tag: $TAG"

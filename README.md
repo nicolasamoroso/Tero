@@ -222,7 +222,7 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 | Merge a `develop` | `plan` y `apply` en dev |
 | A mano (Actions → Infra → Run workflow) | `plan` y `apply` en el ambiente elegido. En prod pide aprobación |
 
-El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
+El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
 
 ### Limitaciones de AWS Academy
 
