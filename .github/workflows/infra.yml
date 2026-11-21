@@ -71,10 +71,12 @@ jobs:
     needs: checks
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-    # Un solo terraform por ambiente a la vez (además del lock del state)
+    # Applies: un grupo por ambiente que nunca se cancela, así un plan de PR no puede reemplazar
+    # un apply en espera. Planes de PR: un grupo por PR; un push nuevo cancela el plan viejo.
+    # Un plan y un apply pueden coincidir: los ordena el lock del state (-lock-timeout).
     concurrency:
-      group: terraform-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-      cancel-in-progress: false
+      group: ${{ github.event_name == 'pull_request' && format('terraform-plan-pr-{0}', github.event.pull_request.number) || format('terraform-apply-{0}', github.event_name == 'workflow_dispatch' && inputs.environment || 'dev') }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
     defaults:
@@ -123,7 +125,17 @@ jobs:
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
         run: |
           terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
-          terraform show -no-color tfplan > plan.txt
+          terraform show -no-color tfplan > plan-completo.txt
+          # El repo es público: la IP del admin no puede quedar en el comentario ni en el artefacto.
+          # GitHub tapa los secrets en los logs, pero no en lo que publica el workflow.
+          IP="${TF_VAR_admin_ingress_cidr%/*}"
+          # [.] en vez de . para que sed busque el punto literal y no "cualquier carácter"
+          sed "s|${IP//./[.]}|***|g" plan-completo.txt > plan.txt
+          rm plan-completo.txt
+          if grep -qF "$IP" plan.txt; then
+            echo "::error::La IP del admin quedó en el plan, no se publica"
+            exit 1
+          fi
 
       - name: Comentar el plan en el PR
         if: github.event_name == 'pull_request'
@@ -132,12 +144,14 @@ jobs:
           script: |
             const fs = require('fs');
             let plan = fs.readFileSync('infra/plan.txt', 'utf8');
+            // El resumen va arriba: si el plan se recorta, igual se ve qué hace
+            const resumen = (plan.match(/^(Plan: .*|No changes\..*)$/m) || ['(sin resumen: ver el plan)'])[0];
             if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (recortado: el plan completo está en el artefacto)';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `### Terraform plan (${process.env.ENVIRONMENT})\n\n<details><summary>Ver el plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`
+              body: `### Terraform plan (${process.env.ENVIRONMENT})\n\n**${resumen}**\n\n<details><summary>Ver el plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`
             });
 
       - name: Subir el plan
