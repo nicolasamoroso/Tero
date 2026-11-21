@@ -94,14 +94,7 @@ func main() {
 	catalog.GET("/tags", c.ListTags)
 	catalog.GET("/products/:id", c.GetProduct)
 
-	r.GET("/health", func(c *gin.Context) {
-		if !chaosController.IsHealthy() {
-			c.AbortWithError(503, fmt.Errorf("health check failed"))
-			return
-		}
-
-		c.String(http.StatusOK, "OK")
-	})
+	r.GET("/health", healthHandler(chaosController))
 
 	r.GET("/topology", func(c *gin.Context) {
 		topology := make(map[string]string)
@@ -162,4 +155,16 @@ func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	otel.SetTracerProvider(tp)
 	return tp, nil
+}
+
+// healthHandler responde 503 si el health se apagó desde /chaos/health (para probar las alarmas)
+func healthHandler(chaos *middleware.ChaosController) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !chaos.IsHealthy() {
+			c.AbortWithError(503, fmt.Errorf("health check failed"))
+			return
+		}
+
+		c.String(http.StatusOK, "OK")
+	}
 }

@@ -110,10 +110,10 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: src/${{ matrix.service }}/requirements.txt
+          cache-dependency-path: src/${{ matrix.service }}/requirements*.txt
       - name: Instalar dependencias
         if: env.TYPE == 'python'
-        run: pip install -r requirements.txt pytest pytest-cov
+        run: pip install -r requirements-dev.txt
       - name: Verificar que el código compila
         if: env.TYPE == 'python'
         run: python -m compileall -q app
@@ -133,7 +133,7 @@ jobs:
       - name: Tests con coverage
         if: env.TYPE == 'go'
         run: |
-          go test ./... -coverprofile=coverage.out -covermode=atomic
+          go test ./... -coverpkg=./... -coverprofile=coverage.out -covermode=atomic
           if [ -f coverage.out ]; then go tool cover -func=coverage.out | tail -n 1; fi
 
       # ---- Coverage como artefacto (si se generó) ----
