@@ -10,8 +10,6 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  pull-requests: read
 
 env:
   AWS_REGION: us-east-1
@@ -49,6 +47,10 @@ jobs:
   gates:
     name: gates
     needs: contexto
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
     runs-on: ubuntu-latest
     env:
       SHA: ${{ needs.contexto.outputs.sha }}
