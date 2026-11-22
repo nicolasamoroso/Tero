@@ -240,6 +240,7 @@ El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a 
 
 - Si dev está apagado (no existe el cluster o el servicio), el deploy se omite con un aviso y las imágenes quedan en ECR. Se levanta dev con `infra.yml` y el próximo merge despliega.
 - Si vencieron las credenciales, o falla cualquier otra consulta a AWS, el job falla: hay que renovarlas y volver a correrlo.
+- Si dev se acaba de crear de cero, el deploy falla esperando a que los servicios queden estables hasta que se cargan los secretos de admin (paso 4) y se corre `init-db.sh` (paso 5). Después se vuelve a correr el job.
 - Rollback: si una task nueva no arranca, el circuit breaker de ECS vuelve solo a la versión anterior y el job falla en la verificación. Para volver a una versión que sí arrancó, se revierte el commit en `develop` (el CD despliega el revert) o se aplica a mano con `-var image_tag=<sha anterior>`, cuya imagen sigue en ECR.
 
 ### 8. Análisis de calidad (SonarCloud)
