@@ -74,6 +74,8 @@ jobs:
 
           CHECKS_COMMIT=$(checks "$SHA")
           CHECKS_SONAR=$(checks "$SHA_SONAR")
+          echo "Checks encontrados en ${SHA::7}:"
+          echo "$CHECKS_COMMIT" | sed 's/^/  /'
           FALLA=0
           for REQUERIDO in "CI ok" "semgrep" "trivy-fs" "gitleaks"; do
             if paso "$CHECKS_COMMIT" "$REQUERIDO"; then
