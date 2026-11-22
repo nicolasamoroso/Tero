@@ -249,6 +249,7 @@ La promoción a test y prod la hace `.github/workflows/promocion.yml`: un push a
 - prod usa `environment: prod`, con aprobación manual (required reviewers).
 - El ambiente tiene que estar levantado (con Infra): si no, el job falla en vez de omitirse.
 - `release/*` se mergea a `main` con merge commit, sin squash: con squash se pierde el SHA original y no hay imagen para ese commit.
+- Un commit directo en `release/*` no tiene imagen (el CD solo construye en `develop` y en tags `v*`) ni los checks de `semgrep`, `trivy-fs` y `gitleaks`, así que el gate lo frena. Los fixes de una release se hacen por `develop` y se corta una release nueva.
 
 ### 8. Análisis de calidad (SonarCloud)
 
