@@ -56,13 +56,13 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 
-      # Por ahora solo informa: DEV-30 corrige o justifica los hallazgos y lo vuelve bloqueante
+      # Bloqueante: falla si hay un hallazgo sin corregir. Los que no aplican están
+      # salteados en el código con #checkov:skip y su justificación.
       - name: Checkov
         uses: bridgecrewio/checkov-action@b17b606d6ec72bb8ba5721ad5b7e340b80a9fc39 # v12.3142.0
         with:
           directory: infra
           framework: terraform
-          soft_fail: true
           quiet: true
 
   # 2) Plan (y apply fuera de los PRs) contra AWS

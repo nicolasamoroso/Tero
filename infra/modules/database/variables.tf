@@ -55,6 +55,12 @@ variable "backup_retention_days" {
   default     = 1
 }
 
+variable "log_retention_days" {
+  type        = number
+  description = "Días que se conservan los logs de PostgreSQL en CloudWatch"
+  default     = 7
+}
+
 variable "deletion_protection" {
   type        = bool
   description = "Impide borrar la base con un destroy. Conviene en prod; en dev y test se deja apagado"

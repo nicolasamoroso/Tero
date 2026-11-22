@@ -3,11 +3,14 @@
 # máquina de cada uno. Se ejecuta con scripts/init-db.sh, una vez por ambiente.
 
 resource "aws_cloudwatch_log_group" "db_init" {
+  #checkov:skip=CKV_AWS_158:CloudWatch ya encripta los logs con claves administradas por AWS; una clave KMS propia suma costo
+  #checkov:skip=CKV_AWS_338:La retención se define por ambiente (log_retention_days); un año de logs en Academy es costo sin uso
   name              = "/ecs/${var.project}-${var.environment}/db-init"
   retention_in_days = var.log_retention_days
 }
 
 resource "aws_ecs_task_definition" "db_init" {
+  #checkov:skip=CKV_AWS_249:Academy solo permite usar LabRole, así que el rol de ejecución y el de la task son el mismo
   family                   = "${var.project}-${var.environment}-db-init"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]

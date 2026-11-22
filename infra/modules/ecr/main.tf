@@ -1,4 +1,5 @@
 resource "aws_ecr_repository" "this" {
+  #checkov:skip=CKV_AWS_136:Encriptado con AES256 administrado por AWS; una clave KMS propia suma costo y no cambia el riesgo para este proyecto
   for_each = var.repositories
 
   name                 = "${var.prefix}/${each.key}"

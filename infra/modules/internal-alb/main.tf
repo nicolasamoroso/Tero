@@ -7,16 +7,23 @@ locals {
 }
 
 resource "aws_lb" "this" {
+  #checkov:skip=CKV_AWS_150:Sin protección contra borrado para poder apagar los ambientes con destroy y cuidar el presupuesto de Academy
+  #checkov:skip=CKV_AWS_91:Los access logs necesitan un bucket S3 con política para ELB; los logs de cada servicio ya van a CloudWatch
+  #checkov:skip=CKV2_AWS_20:ALB interno, el tráfico no sale de la VPC y no hay certificado de ACM para HTTPS (ADR 0003)
   name               = "${var.name}-int"
   load_balancer_type = "application"
   internal           = true
   subnets            = var.subnet_ids
   security_groups    = [var.security_group_id]
 
+  # Descarta los requests con headers HTTP inválidos en vez de pasarlos a los servicios
+  drop_invalid_header_fields = true
+
   tags = merge(local.common_tags, { Name = "${var.name}-int" })
 }
 
 resource "aws_lb_target_group" "this" {
+  #checkov:skip=CKV_AWS_378:Tráfico entre servicios dentro de la VPC, limitado por security groups; los contenedores sirven HTTP
   for_each = var.services
 
   name                 = "${var.name}-int-${each.key}"
@@ -39,6 +46,8 @@ resource "aws_lb_target_group" "this" {
 }
 
 resource "aws_lb_listener" "this" {
+  #checkov:skip=CKV_AWS_2:ALB interno, el tráfico no sale de la VPC y no hay certificado de ACM para HTTPS (ADR 0003)
+  #checkov:skip=CKV_AWS_103:Sin HTTPS no aplica la política de TLS
   for_each = var.services
 
   load_balancer_arn = aws_lb.this.arn

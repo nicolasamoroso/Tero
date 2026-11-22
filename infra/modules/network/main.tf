@@ -7,11 +7,20 @@ locals {
 }
 
 resource "aws_vpc" "this" {
+  #checkov:skip=CKV2_AWS_11:Los flow logs necesitan un rol propio para publicar en CloudWatch y Academy no deja crear roles; además suman costo de ingesta
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
   tags = merge(local.common_tags, { Name = "${var.name}-vpc" })
+}
+
+# El security group por defecto de la VPC queda sin reglas: ningún recurso lo usa
+# y así nada que se cree sin security group explícito queda con tráfico abierto
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(local.common_tags, { Name = "${var.name}-default-sg" })
 }
 
 resource "aws_internet_gateway" "this" {
@@ -81,6 +90,7 @@ resource "aws_route_table_association" "private" {
 # ---------------------------------------------------------------------------
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV2_AWS_5:Falso positivo, lo usa el módulo alb (Checkov no sigue los outputs entre módulos)
   name        = "${var.name}-alb"
   description = "Load balancer publico de Tero"
   vpc_id      = aws_vpc.this.id
@@ -89,6 +99,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "internal_alb" {
+  #checkov:skip=CKV2_AWS_5:Falso positivo, lo usa el módulo internal-alb (Checkov no sigue los outputs entre módulos)
   name        = "${var.name}-internal-alb"
   description = "Load balancer interno, para que los servicios se llamen entre si"
   vpc_id      = aws_vpc.this.id
@@ -97,6 +108,7 @@ resource "aws_security_group" "internal_alb" {
 }
 
 resource "aws_security_group" "services" {
+  #checkov:skip=CKV2_AWS_5:Falso positivo, lo usan los servicios de ECS (Checkov no sigue los outputs entre módulos)
   name        = "${var.name}-services"
   description = "Servicios de Tero en ECS Fargate"
   vpc_id      = aws_vpc.this.id
@@ -105,6 +117,7 @@ resource "aws_security_group" "services" {
 }
 
 resource "aws_security_group" "rds" {
+  #checkov:skip=CKV2_AWS_5:Falso positivo, lo usa el módulo database (Checkov no sigue los outputs entre módulos)
   name        = "${var.name}-rds"
   description = "Base de datos PostgreSQL"
   vpc_id      = aws_vpc.this.id
@@ -113,6 +126,7 @@ resource "aws_security_group" "rds" {
 }
 
 resource "aws_security_group" "redis" {
+  #checkov:skip=CKV2_AWS_5:Falso positivo, lo usa el módulo cache (Checkov no sigue los outputs entre módulos)
   name        = "${var.name}-redis"
   description = "Redis"
   vpc_id      = aws_vpc.this.id
@@ -122,6 +136,7 @@ resource "aws_security_group" "redis" {
 
 # ALB: recibe HTTP de Internet y solo habla con los servicios
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  #checkov:skip=CKV_AWS_260:Es la entrada pública de la tienda en el puerto 80; sin dominio propio no hay certificado para HTTPS (ADR 0003)
   security_group_id = aws_security_group.alb.id
   description       = "HTTP desde el origen permitido"
   ip_protocol       = "tcp"
