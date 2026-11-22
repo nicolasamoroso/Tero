@@ -1,0 +1,191 @@
+name: Promoción
+
+# Promueve a test (rama release/*) y a prod (rama main) la imagen que ya se construyó y probó en develop.
+# - No reconstruye nada: despliega el SHA original del commit de develop, así dev, test y prod corren la misma imagen.
+# - Gates: si en ese SHA no pasaron los tests, Sonar, Trivy, Semgrep o Gitleaks, o la imagen no está en ECR, no se promueve.
+# - prod usa environment: prod, que pide aprobación manual antes de desplegar.
+on:
+  push:
+    branches: ['release/**', main]
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  contexto:
+    name: contexto
+    runs-on: ubuntu-latest
+    outputs:
+      ambiente: ${{ steps.c.outputs.ambiente }}
+      sha: ${{ steps.c.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: Ambiente y SHA a promover
+        id: c
+        run: |
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            AMBIENTE="prod"
+          else
+            AMBIENTE="test"
+          fi
+          # Un merge commit (release -> main) tiene dos padres: la imagen es la del último commit de la rama de release.
+          # En un push directo a release/* el commit es el mismo que se construyó en develop.
+          if git rev-parse --verify -q "HEAD^2" >/dev/null; then
+            SHA=$(git rev-parse "HEAD^2")
+          else
+            SHA="$GITHUB_SHA"
+          fi
+          echo "ambiente=$AMBIENTE" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Se promueve ${SHA::7} a $AMBIENTE"
+
+  gates:
+    name: gates
+    needs: contexto
+    runs-on: ubuntu-latest
+    env:
+      SHA: ${{ needs.contexto.outputs.sha }}
+    steps:
+      # CI, SAST, SCA y Gitleaks corren en el push a develop, así que sus checks quedan en el commit.
+      # SonarCloud (plan gratis) solo tiene quality gate en PRs y en main: se verifica en la cabeza del PR que introdujo el commit.
+      - name: Checks del commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          checks() {
+            gh api "repos/${GITHUB_REPOSITORY}/commits/$1/check-runs?per_page=100" \
+              --paginate --jq '.check_runs[] | [.name, .conclusion] | @tsv'
+          }
+          paso() {
+            awk -F'\t' -v n="$2" '$1==n && $2=="success" {ok=1} END {exit !ok}' <<< "$1"
+          }
+
+          PR_HEAD=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
+            --jq '[.[] | select(.merged_at != null)][0].head.sha // empty')
+          SHA_SONAR="${PR_HEAD:-$SHA}"
+          echo "Commit promovido: ${SHA::7}. Sonar se verifica en: ${SHA_SONAR::7}"
+
+          CHECKS_COMMIT=$(checks "$SHA")
+          CHECKS_SONAR=$(checks "$SHA_SONAR")
+          FALLA=0
+          for REQUERIDO in "CI ok" "semgrep" "trivy-fs" "gitleaks"; do
+            if paso "$CHECKS_COMMIT" "$REQUERIDO"; then
+              echo "OK    $REQUERIDO"
+            else
+              echo "::error::El check '$REQUERIDO' no pasó en ${SHA::7}: no se promueve."
+              FALLA=1
+            fi
+          done
+          if paso "$CHECKS_SONAR" "sonarcloud"; then
+            echo "OK    sonarcloud (${SHA_SONAR::7})"
+          else
+            echo "::error::El check 'sonarcloud' no pasó en ${SHA_SONAR::7}: no se promueve."
+            FALLA=1
+          fi
+          exit $FALLA
+
+      # Academy no permite OIDC: se usan las credenciales del lab guardadas como secrets
+      # (se renuevan con scripts/renovar-credenciales-aws.sh)
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Promover es desplegar la misma imagen: tiene que existir en ECR, no se construye de nuevo
+      - name: Imágenes en ECR
+        run: |
+          FALLA=0
+          for SERVICE in ui admin checkout cart catalog orders; do
+            if aws ecr describe-images --repository-name "tero/${SERVICE}" \
+                 --image-ids imageTag="${SHA::7}" >/dev/null 2>&1; then
+              echo "OK    tero/${SERVICE}:${SHA::7}"
+            else
+              echo "::error::tero/${SERVICE}:${SHA::7} no está en ECR. Esa imagen sale del CD de develop: no se reconstruye."
+              FALLA=1
+            fi
+          done
+          exit $FALLA
+
+  deploy:
+    name: deploy (${{ needs.contexto.outputs.ambiente }})
+    needs: [contexto, gates]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.contexto.outputs.ambiente }}
+    # Mismo grupo que infra.yml y cd.yml para ese ambiente: nunca corren dos terraform a la vez
+    concurrency:
+      group: terraform-apply-${{ needs.contexto.outputs.ambiente }}
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT: ${{ needs.contexto.outputs.ambiente }}
+      SHA: ${{ needs.contexto.outputs.sha }}
+      CLUSTER: tero-${{ needs.contexto.outputs.ambiente }}
+      SERVICES: ui admin checkout carts catalog orders
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # A diferencia de dev, acá no se omite: promover a un ambiente que no existe tiene que fallar, no quedar en verde.
+      - name: Ver que el ambiente esté levantado
+        run: |
+          if ! SALIDA=$(aws ecs describe-services --cluster "$CLUSTER" --services ui \
+               --query 'services[0].status' --output text 2>&1); then
+            echo "::error::No se pudo consultar ECS ($CLUSTER): $SALIDA"
+            exit 1
+          fi
+          if [[ "$SALIDA" != "ACTIVE" ]]; then
+            echo "::error::El ambiente $ENVIRONMENT no está levantado. Levantarlo con Infra (Run workflow) y volver a correr este workflow."
+            exit 1
+          fi
+      - name: terraform init
+        run: terraform init -input=false -backend-config="envs/backend-${ENVIRONMENT}.hcl"
+      - name: terraform plan
+        env:
+          TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+        run: |
+          export TF_VAR_image_tag="${SHA::7}"
+          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+      - name: terraform apply
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+      - name: Esperar a que los servicios queden estables
+        run: |
+          # SERVICES son varias palabras: se dejan sin comillas para que se separen
+          # shellcheck disable=SC2086
+          aws ecs wait services-stable --cluster "$CLUSTER" --services $SERVICES
+      # APP_VERSION de la task definition que corre tiene que ser el SHA promovido
+      - name: Verificar la versión desplegada
+        run: |
+          ESPERADO="${SHA::7}"
+          FALLA=0
+          for svc in $SERVICES; do
+            TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$svc" \
+              --query 'services[0].taskDefinition' --output text)
+            VERSION=$(aws ecs describe-task-definition --task-definition "$TD" \
+              --query "taskDefinition.containerDefinitions[0].environment[?name=='APP_VERSION'].value | [0]" --output text)
+            echo "$svc: APP_VERSION=$VERSION"
+            [[ "$VERSION" == "$ESPERADO" ]] || FALLA=1
+          done
+          if [[ "$FALLA" == 1 ]]; then
+            echo "::error::Algún servicio no corre la versión $ESPERADO"
+            exit 1
+          fi

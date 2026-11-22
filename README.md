@@ -243,6 +243,13 @@ El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a 
 - Si dev se acaba de crear de cero, el deploy falla esperando a que los servicios queden estables hasta que se cargan los secretos de admin (paso 4) y se corre `init-db.sh` (paso 5). Después se vuelve a correr el job.
 - Rollback: si una task nueva no arranca, el circuit breaker de ECS vuelve solo a la versión anterior y el job falla en la verificación. Para volver a una versión que sí arrancó, se revierte el commit en `develop` (el CD despliega el revert) o se aplica a mano con `-var image_tag=<sha anterior>`, cuya imagen sigue en ECR.
 
+La promoción a test y prod la hace `.github/workflows/promocion.yml`: un push a `release/*` promueve a test y un push a `main` promueve a prod. No reconstruye nada: despliega el SHA original del commit de `develop` (en un merge commit de `release/*` a `main` es el último commit de la rama de release), así dev, test y prod corren la misma imagen.
+
+- Gates: antes de desplegar, el job `gates` verifica que en ese SHA hayan pasado `CI ok` (incluye los tests), `semgrep`, `trivy-fs` y `gitleaks`, que `sonarcloud` haya pasado en el PR que introdujo el commit (en el plan gratis de SonarCloud el quality gate solo existe en PRs y en `main`, no en los push a `develop`), y que las 6 imágenes estén en ECR. Si algo falla, no se promueve.
+- prod usa `environment: prod`, con aprobación manual (required reviewers).
+- El ambiente tiene que estar levantado (con Infra): si no, el job falla en vez de omitirse.
+- `release/*` se mergea a `main` con merge commit, sin squash: con squash se pierde el SHA original y no hay imagen para ese commit.
+
 ### 8. Análisis de calidad (SonarCloud)
 
 `.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR a `develop` y `main` y en cada push a `main`. No corre en los push a `develop` porque en el plan gratis de SonarCloud solo la rama principal tiene quality gate; el gate de `develop` se aplica en el PR, antes de mergear. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
