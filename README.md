@@ -240,6 +240,17 @@ El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a 
 - Si vencieron las credenciales, o falla cualquier otra consulta a AWS, el job falla: hay que renovarlas y volver a correrlo.
 - Rollback: si una task nueva no arranca, el circuit breaker de ECS vuelve solo a la versión anterior y el job falla en la verificación. Para volver a una versión que sí arrancó, se revierte el commit en `develop` (el CD despliega el revert) o se aplica a mano con `-var image_tag=<sha anterior>`, cuya imagen sigue en ECR.
 
+### 8. Análisis de calidad (SonarCloud)
+
+`.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR y push a `develop` y `main`. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
+
+La base es la del laboratorio de SonarCloud (T02): `sonarqube-scan-action` y un `sonar-project.properties` en la raíz. Se agregan dos cosas que el laboratorio no tiene:
+
+- **Coverage.** Antes del análisis corre los tests de catalog, orders, cart y checkout y le pasa los reportes a Sonar. Corre siempre los cuatro, no solo los que cambiaron, para que el coverage de los servicios sin cambios no aparezca en 0. ui y admin no tienen tests.
+- **Quality gate que bloquea.** Con `sonar.qualitygate.wait=true` el job espera el resultado del quality gate y falla si no pasa. En el laboratorio el gate solo se ve en SonarCloud y el pipeline sigue igual.
+
+Como el workflow instala dependencias para correr los tests, Sonar también lo analiza: `pip` instala solo paquetes binarios (`--only-binary :all:`) y `yarn` no corre los scripts de instalación (`YARN_ENABLE_SCRIPTS=false`). El aviso por instalar dependencias de Python sin lockfile con hashes quedó aceptado en SonarCloud: las versiones directas están fijadas con `==` y Trivy fs escanea las dependencias.
+
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
