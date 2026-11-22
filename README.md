@@ -234,6 +234,17 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 
 El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
 
+### 8. Análisis de calidad (SonarCloud)
+
+`.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR y push a `develop` y `main`. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
+
+La base es la del laboratorio de SonarCloud (T02): `sonarqube-scan-action` y un `sonar-project.properties` en la raíz. Se agregan dos cosas que el laboratorio no tiene:
+
+- **Coverage.** Antes del análisis corre los tests de catalog, orders, cart y checkout y le pasa los reportes a Sonar. Corre siempre los cuatro, no solo los que cambiaron, para que el coverage de los servicios sin cambios no aparezca en 0. ui y admin no tienen tests.
+- **Quality gate que bloquea.** Con `sonar.qualitygate.wait=true` el job espera el resultado del quality gate y falla si no pasa. En el laboratorio el gate solo se ve en SonarCloud y el pipeline sigue igual.
+
+Como el workflow instala dependencias para correr los tests, Sonar también lo analiza: `pip` instala solo paquetes binarios (`--only-binary :all:`) y `yarn` no corre los scripts de instalación (`YARN_ENABLE_SCRIPTS=false`). El aviso por instalar dependencias de Python sin lockfile con hashes quedó aceptado en SonarCloud: las versiones directas están fijadas con `==` y Trivy fs escanea las dependencias.
+
 ### Limitaciones de AWS Academy
 
 - Las credenciales duran unas 4 horas y hay que renovarlas desde el lab (`~/.aws/credentials`).
