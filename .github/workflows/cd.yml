@@ -3,6 +3,7 @@ name: CD
 # Construye la imagen de cada servicio, la escanea con Trivy y la sube a ECR.
 # - Push a develop: imagen con el SHA corto del commit (el mismo formato que scripts/subir-imagenes.sh).
 # - Tag v*: además del SHA, la imagen lleva el semver del release (por ejemplo v0.2.0).
+# - Push a develop: después de subir las imágenes, despliega ese SHA en dev con terraform apply.
 on:
   push:
     branches: [develop]
@@ -40,7 +41,7 @@ jobs:
 
       # Academy no permite OIDC: se usan las credenciales del lab guardadas como secrets
       # (se renuevan con scripts/renovar-credenciales-aws.sh)
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -100,3 +101,98 @@ jobs:
           aws ecr put-image --repository-name "tero/${{ matrix.service }}" \
             --image-tag "${{ steps.tags.outputs.semver }}" --image-manifest "$MANIFEST" >/dev/null
           echo "tero/${{ matrix.service }}:${{ steps.tags.outputs.semver }} apunta a ${{ steps.tags.outputs.sha }}"
+
+  # Deploy a dev: con las 6 imágenes en ECR, aplica Terraform con el SHA nuevo.
+  # Usa el mismo grupo de concurrencia que el apply de infra.yml, así nunca corren dos terraform a la vez en dev.
+  deploy-dev:
+    name: deploy (dev)
+    needs: imagen
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: terraform-apply-dev
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT: dev
+      CLUSTER: tero-dev
+      SERVICES: ui admin checkout carts catalog orders
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # En Academy dev se destruye al terminar el día: si está apagado no se despliega,
+      # porque levantarlo entero en cada merge gasta presupuesto. Se levanta con infra.yml.
+      # Solo cuenta como apagado si el cluster o el servicio no existen; cualquier otro error falla.
+      - name: Ver si dev está levantado
+        id: dev
+        run: |
+          if SALIDA=$(aws ecs describe-services --cluster "$CLUSTER" --services ui \
+               --query 'services[0].status' --output text 2>&1); then
+            ESTADO="$SALIDA"
+          elif [[ "$SALIDA" == *ClusterNotFoundException* ]]; then
+            ESTADO="NO_EXISTE"
+          else
+            echo "::error::No se pudo consultar ECS: $SALIDA"
+            exit 1
+          fi
+          if [[ "$ESTADO" == "ACTIVE" ]]; then
+            echo "levantado=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "levantado=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dev está apagado, no se despliega. Las imágenes ${GITHUB_SHA::7} quedaron en ECR."
+          fi
+
+      - name: terraform init
+        if: steps.dev.outputs.levantado == 'true'
+        run: terraform init -input=false -backend-config="envs/backend-${ENVIRONMENT}.hcl"
+
+      - name: terraform plan
+        if: steps.dev.outputs.levantado == 'true'
+        env:
+          TF_VAR_image_tag: ${{ github.sha }}
+          TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+        run: |
+          export TF_VAR_image_tag="${TF_VAR_image_tag::7}"
+          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+
+      - name: terraform apply
+        if: steps.dev.outputs.levantado == 'true'
+        run: terraform apply -input=false -lock-timeout=5m tfplan
+
+      - name: Esperar a que los servicios queden estables
+        if: steps.dev.outputs.levantado == 'true'
+        run: aws ecs wait services-stable --cluster "$CLUSTER" --services $SERVICES
+
+      # APP_VERSION de la task definition que corre tiene que ser el SHA de este commit
+      - name: Verificar la versión desplegada
+        if: steps.dev.outputs.levantado == 'true'
+        run: |
+          ESPERADO="${GITHUB_SHA::7}"
+          FALLA=0
+          for svc in $SERVICES; do
+            TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$svc" \
+              --query 'services[0].taskDefinition' --output text)
+            VERSION=$(aws ecs describe-task-definition --task-definition "$TD" \
+              --query "taskDefinition.containerDefinitions[0].environment[?name=='APP_VERSION'].value | [0]" --output text)
+            echo "$svc: APP_VERSION=$VERSION"
+            [[ "$VERSION" == "$ESPERADO" ]] || FALLA=1
+          done
+          if [[ "$FALLA" == 1 ]]; then
+            echo "::error::Algún servicio no corre la versión $ESPERADO"
+            exit 1
+          fi

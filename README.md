@@ -234,6 +234,12 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 
 El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
 
+El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a `develop`, después de subir las imágenes, el job `deploy (dev)` aplica Terraform con `image_tag` igual al SHA corto del commit, espera a que los servicios queden estables y verifica que todos corran ese `APP_VERSION`. Comparte el grupo de concurrencia con el apply de `infra.yml`, así nunca corren dos `terraform apply` a la vez en dev.
+
+- Si dev está apagado (no existe el cluster o el servicio), el deploy se omite con un aviso y las imágenes quedan en ECR. Se levanta dev con `infra.yml` y el próximo merge despliega.
+- Si vencieron las credenciales, o falla cualquier otra consulta a AWS, el job falla: hay que renovarlas y volver a correrlo.
+- Rollback: si una task nueva no arranca, el circuit breaker de ECS vuelve solo a la versión anterior y el job falla en la verificación. Para volver a una versión que sí arrancó, se revierte el commit en `develop` (el CD despliega el revert) o se aplica a mano con `-var image_tag=<sha anterior>`, cuya imagen sigue en ECR.
+
 ### 8. Análisis de calidad (SonarCloud)
 
 `.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR y push a `develop` y `main`. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
