@@ -137,11 +137,19 @@ jobs:
 
       # En Academy dev se destruye al terminar el día: si está apagado no se despliega,
       # porque levantarlo entero en cada merge gasta presupuesto. Se levanta con infra.yml.
+      # Solo cuenta como apagado si el cluster o el servicio no existen; cualquier otro error falla.
       - name: Ver si dev está levantado
         id: dev
         run: |
-          ESTADO=$(aws ecs describe-services --cluster "$CLUSTER" --services ui \
-            --query 'services[0].status' --output text 2>/dev/null || true)
+          if SALIDA=$(aws ecs describe-services --cluster "$CLUSTER" --services ui \
+               --query 'services[0].status' --output text 2>&1); then
+            ESTADO="$SALIDA"
+          elif [[ "$SALIDA" == *ClusterNotFoundException* ]]; then
+            ESTADO="NO_EXISTE"
+          else
+            echo "::error::No se pudo consultar ECS: $SALIDA"
+            exit 1
+          fi
           if [[ "$ESTADO" == "ACTIVE" ]]; then
             echo "levantado=true" >> "$GITHUB_OUTPUT"
           else
