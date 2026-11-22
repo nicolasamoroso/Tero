@@ -6,8 +6,10 @@ name: Sonar
 on:
   pull_request:
     branches: [develop, main]
+  # En el plan gratis de SonarCloud solo la rama principal (main) tiene quality gate; en develop
+  # el gate se aplica en los PRs, antes de mergear
   push:
-    branches: [develop, main]
+    branches: [main]
 
 permissions:
   contents: read

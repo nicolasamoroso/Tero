@@ -244,7 +244,7 @@ El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a 
 
 ### 8. Análisis de calidad (SonarCloud)
 
-`.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR y push a `develop` y `main`. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
+`.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR a `develop` y `main` y en cada push a `main`. No corre en los push a `develop` porque en el plan gratis de SonarCloud solo la rama principal tiene quality gate; el gate de `develop` se aplica en el PR, antes de mergear. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
 
 La base es la del laboratorio de SonarCloud (T02): `sonarqube-scan-action` y un `sonar-project.properties` en la raíz. Se agregan dos cosas que el laboratorio no tiene:
 
