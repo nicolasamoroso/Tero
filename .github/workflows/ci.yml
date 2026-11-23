@@ -113,7 +113,7 @@ jobs:
           cache-dependency-path: src/${{ matrix.service }}/requirements*.txt
       - name: Instalar dependencias
         if: env.TYPE == 'python'
-        run: pip install -r requirements-dev.txt
+        run: pip install --only-binary :all: -r requirements-dev.txt
       - name: Verificar que el código compila
         if: env.TYPE == 'python'
         run: python -m compileall -q app
