@@ -114,7 +114,7 @@ jobs:
       - name: Instalar dependencias
         if: env.TYPE == 'python'
         run: |
-          pip install --only-binary :all: -r requirements-dev.txt
+          pip install --only-binary :all: --require-hashes -r requirements-dev.lock
       - name: Verificar que el código compila
         if: env.TYPE == 'python'
         run: python -m compileall -q app
