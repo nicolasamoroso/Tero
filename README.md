@@ -65,6 +65,8 @@ Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.y
 | catalog, orders | `go test ./... -coverpkg=./... -coverprofile=coverage.out` (sin Go instalado: `docker run --rm -v "$PWD:/src" -w /src golang:1.26.11 sh -c "go test ./..."`) | `coverage.out` |
 | checkout | `node .yarn/releases/yarn-4.11.0.cjs test` | `coverage/lcov.info` |
 
+`src/cart/requirements-dev.lock` fija con hashes todas las dependencias de test de cart. Hay que regenerarlo cuando cambian `requirements.txt` o `requirements-dev.txt`; si no, el CI prueba con versiones viejas. Desde `src/cart/` (con Python 3.12): `pip-compile --allow-unsafe --generate-hashes --output-file=requirements-dev.lock --pip-args='--only-binary=:all:' --strip-extras requirements-dev.txt`.
+
 ## Despliegue en AWS
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.

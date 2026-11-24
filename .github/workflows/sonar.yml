@@ -39,7 +39,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: src/cart/requirements*.txt
+          cache-dependency-path: |
+            src/cart/requirements*.txt
+            src/cart/requirements*.lock
 
       - name: Coverage de cart
         working-directory: src/cart
