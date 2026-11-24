@@ -25,7 +25,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   AWS_REGION: us-east-1
@@ -69,6 +68,9 @@ jobs:
   terraform:
     name: plan y apply (${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }})
     needs: checks
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
     # Applies: un grupo por ambiente que nunca se cancela, así un plan de PR no puede reemplazar
