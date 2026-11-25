@@ -141,6 +141,7 @@ jobs:
         env:
           TF_VAR_image_tag: ${{ steps.tag.outputs.image_tag }}
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
           terraform show -no-color tfplan > plan-completo.txt

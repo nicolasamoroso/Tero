@@ -166,6 +166,7 @@ jobs:
       - name: terraform plan
         env:
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           export TF_VAR_image_tag="${SHA::7}"
           terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
