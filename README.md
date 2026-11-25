@@ -277,7 +277,7 @@ Terraform crea alarmas de CloudWatch que avisan por email a través de un tópic
 | p95 (ALB público e interno) | El p95 del tiempo de respuesta supera 1 segundo en 5 minutos | [rendimiento](docs/runbooks/rendimiento.md) |
 | CPU (un servicio) | Más de 80% de CPU durante 10 minutos | [recursos](docs/runbooks/recursos.md) |
 
-El email sale de `alarm_email` (secret `ALARM_EMAIL` en los pipelines). Después del primer apply, AWS manda un mail para confirmar la suscripción: hasta que no se confirma, no llega ningún aviso.
+El tópico está cifrado con una clave de KMS propia (`alias/tero-<ambiente>-alarmas`, con rotación anual), porque la clave administrada `aws/sns` no deja publicar a CloudWatch. El email sale de `alarm_email` (secret `ALARM_EMAIL` en los pipelines). Después del primer apply, AWS manda un mail para confirmar la suscripción: hasta que no se confirma, no llega ningún aviso.
 
 ### Limitaciones de AWS Academy
 

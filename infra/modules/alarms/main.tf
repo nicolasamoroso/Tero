@@ -6,10 +6,51 @@ locals {
   runbooks    = "https://github.com/nicolasamoroso/Tero/blob/main/docs/runbooks"
 }
 
-resource "aws_sns_topic" "alarms" {
-  #checkov:skip=CKV_AWS_26:CloudWatch no puede publicar en un tópico cifrado con la clave administrada aws/sns y una clave propia de KMS tiene costo mensual; los mensajes son avisos sin datos sensibles
-  name = "${var.name}-alarmas"
+data "aws_caller_identity" "current" {}
+
+# El tópico va cifrado con una clave propia: la clave administrada aws/sns no sirve, porque su
+# política no se puede cambiar y no deja que CloudWatch publique en el tópico.
+# En una key policy, "Resource": "*" es la propia clave, no todos los recursos de la cuenta.
+resource "aws_kms_key" "alarms" {
+  description             = "Cifrado del tópico SNS de alarmas de ${var.name}"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # La cuenta administra la clave (lo usual en una key policy; los permisos reales salen de IAM)
+        Sid       = "AdministracionDeLaCuenta"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        # CloudWatch necesita cifrar el mensaje de la alarma para publicarlo en el tópico
+        Sid       = "CloudWatchPublicaAlarmas"
+        Effect    = "Allow"
+        Principal = { Service = "cloudwatch.amazonaws.com" }
+        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id } }
+      },
+    ]
+  })
+
   tags = merge(local.common_tags, { Name = "${var.name}-alarmas" })
+}
+
+resource "aws_kms_alias" "alarms" {
+  name          = "alias/${var.name}-alarmas"
+  target_key_id = aws_kms_key.alarms.key_id
+}
+
+resource "aws_sns_topic" "alarms" {
+  name              = "${var.name}-alarmas"
+  kms_master_key_id = aws_kms_key.alarms.arn
+  tags              = merge(local.common_tags, { Name = "${var.name}-alarmas" })
 }
 
 resource "aws_sns_topic_subscription" "email" {
