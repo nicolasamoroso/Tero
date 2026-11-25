@@ -52,3 +52,8 @@ output "alb_admin_url" {
   description = "URL del panel de admin (restringida por IP)"
   value       = module.alb.admin_url
 }
+
+output "alarms_sns_topic_arn" {
+  description = "ARN del tópico SNS que reciben todas las alarmas"
+  value       = module.alarms.sns_topic_arn
+}

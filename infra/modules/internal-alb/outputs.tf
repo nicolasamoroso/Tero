@@ -16,3 +16,14 @@ output "target_group_arns" {
 
   depends_on = [aws_lb_listener.this]
 }
+
+
+output "arn_suffix" {
+  description = "Identificador del ALB para las métricas de CloudWatch (dimensión LoadBalancer)"
+  value       = aws_lb.this.arn_suffix
+}
+
+output "target_group_arn_suffixes" {
+  description = "Identificador de cada target group para las métricas de CloudWatch (dimensión TargetGroup)"
+  value       = { for name, tg in aws_lb_target_group.this : name => tg.arn_suffix }
+}
