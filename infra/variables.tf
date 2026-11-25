@@ -119,3 +119,15 @@ variable "log_retention_days" {
     error_message = "CloudWatch solo acepta ciertos valores: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180 o 365."
   }
 }
+
+
+variable "alarm_email" {
+  type        = string
+  description = "Email que recibe las alarmas. No se versiona porque el repo es público: se pasa con -var o con el secret ALARM_EMAIL en los pipelines"
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@ ]+@[^@ ]+[.][^@ ]+$", var.alarm_email))
+    error_message = "Tiene que ser un email válido, por ejemplo equipo@example.com."
+  }
+}

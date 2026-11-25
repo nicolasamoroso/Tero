@@ -104,7 +104,7 @@ Cada ambiente (`dev`, `test`, `prod`) tiene su propio state, dentro del mismo bu
 ```bash
 cd infra
 terraform init -backend-config=envs/backend-dev.hcl
-terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
+terraform plan -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32 -var alarm_email=<tu-email>
 ```
 
 Sin `-var-file`, Terraform pregunta el valor de `environment` y `vpc_cidr`. `image_tag` es el tag de las imágenes en ECR (el SHA del commit) y es obligatorio, porque los tags son inmutables y no existe `latest`.
@@ -133,7 +133,7 @@ Desde `infra/`, con el ambiente elegido:
 
 ```bash
 terraform init -reconfigure -backend-config=envs/backend-dev.hcl
-terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32
+terraform apply -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32 -var alarm_email=<tu-email>
 ```
 
 `admin_ingress_cidr` es el único origen que puede entrar al panel de admin (puerto 8081 del ALB). Tu IP: `curl -s https://checkip.amazonaws.com`. La UI es pública en el puerto 80. Las URLs salen en los outputs `alb_url` y `alb_admin_url`.
@@ -173,7 +173,7 @@ Cada ambiente tiene sus valores en `infra/envs/<ambiente>.tfvars`:
 | Snapshot final al destruir | no | no | sí |
 | Recuperación de secretos borrados | al instante | al instante | 7 días |
 
-`image_tag` y `admin_ingress_cidr` no van en los `.tfvars`: el primero cambia en cada deploy y el segundo es la IP de quien despliega. Se pasan con `-var`.
+`image_tag`, `admin_ingress_cidr` y `alarm_email` no van en los `.tfvars`: el primero cambia en cada deploy, el segundo es la IP de quien despliega y el tercero es un email personal (el repo es público). Se pasan con `-var`.
 
 Para destruir prod hay que sacar primero la protección de la base: `terraform apply -var-file=envs/prod.tfvars -var db_deletion_protection=false ...` y después el `destroy`. Al destruir prod quedan dos cosas a tener en cuenta:
 
@@ -193,7 +193,7 @@ Para destruir prod hay que sacar primero la protección de la base: `terraform a
 
   Lo mismo para `tero/prod/admin-jwt-secret`.
 
-Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32`) y volver a crear con el mismo `apply`.
+Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32 -var alarm_email=<tu-email>`) y volver a crear con el mismo `apply`.
 
 ### 5. Inicializar la base (una vez por ambiente)
 
@@ -234,9 +234,11 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 | Merge a `develop` | `plan` y `apply` en dev |
 | A mano (Actions → Infra → Run workflow) | `plan` y `apply` en el ambiente elegido. En prod pide aprobación |
 
+Como el repo es público, el plan nunca se imprime tal cual: `scripts/terraform-plan.sh` (lo usan `infra.yml`, `cd.yml` y `promocion.yml`) tapa toda IP `/32` antes de mostrarlo en el log, el comentario y el artefacto.
+
 Checkov bloquea: un hallazgo nuevo hace fallar el PR. Se corrige, o se saltea con `#checkov:skip=<regla>:<motivo>` dentro del recurso, así la justificación queda junto al código. Para correrlo local: `docker run --rm -v "$PWD/infra:/infra" bridgecrew/checkov:3.4.6 -d /infra --framework terraform --compact` (la misma versión que usa el pipeline).
 
-El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
+El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script), `ADMIN_INGRESS_CIDR` y `ALARM_EMAIL`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
 
 El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a `develop`, después de subir las imágenes, el job `deploy (dev)` aplica Terraform con `image_tag` igual al SHA corto del commit, espera a que los servicios queden estables y verifica que todos corran ese `APP_VERSION`. Comparte el grupo de concurrencia con el apply de `infra.yml`, así nunca corren dos `terraform apply` a la vez en dev.
 
@@ -263,6 +265,19 @@ La base es la del laboratorio de SonarCloud (T02): `sonarqube-scan-action` y un 
 - **Quality gate que bloquea.** Con `sonar.qualitygate.wait=true` el job espera el resultado del quality gate y falla si no pasa. En el laboratorio el gate solo se ve en SonarCloud y el pipeline sigue igual.
 
 Como el workflow instala dependencias para correr los tests, Sonar también lo analiza: `pip` instala solo paquetes binarios (`--only-binary :all:`) y `yarn` no corre los scripts de instalación (`YARN_ENABLE_SCRIPTS=false`). El aviso por instalar dependencias de Python sin lockfile con hashes quedó aceptado en SonarCloud: las versiones directas están fijadas con `==` y Trivy fs escanea las dependencias.
+
+### 9. Alarmas
+
+Terraform crea alarmas de CloudWatch que avisan por email a través de un tópico SNS (`tero-<ambiente>-alarmas`), cuando se disparan y cuando vuelven a OK:
+
+| Alarma | Condición | Runbook |
+|--|--|--|
+| 5XX (ALB público e interno) | Más de 5 respuestas 5XX en 5 minutos | [disponibilidad](docs/runbooks/disponibilidad.md) |
+| Unhealthy (un servicio) | Al menos una task no pasa el health check durante 2 minutos | [disponibilidad](docs/runbooks/disponibilidad.md) |
+| p95 (ALB público e interno) | El p95 del tiempo de respuesta supera 1 segundo en 5 minutos | [rendimiento](docs/runbooks/rendimiento.md) |
+| CPU (un servicio) | Más de 80% de CPU durante 10 minutos | [recursos](docs/runbooks/recursos.md) |
+
+El tópico está cifrado con una clave de KMS propia (`alias/tero-<ambiente>-alarmas`, con rotación anual), porque la clave administrada `aws/sns` no deja publicar a CloudWatch. El email sale de `alarm_email` (secret `ALARM_EMAIL` en los pipelines). Después del primer apply, AWS manda un mail para confirmar la suscripción: hasta que no se confirma, no llega ningún aviso.
 
 ### Limitaciones de AWS Academy
 
