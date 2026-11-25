@@ -234,6 +234,8 @@ La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (u
 | Merge a `develop` | `plan` y `apply` en dev |
 | A mano (Actions → Infra → Run workflow) | `plan` y `apply` en el ambiente elegido. En prod pide aprobación |
 
+Como el repo es público, el plan nunca se imprime tal cual: `scripts/terraform-plan.sh` (lo usan `infra.yml`, `cd.yml` y `promocion.yml`) tapa toda IP `/32` antes de mostrarlo en el log, el comentario y el artefacto.
+
 Checkov bloquea: un hallazgo nuevo hace fallar el PR. Se corrige, o se saltea con `#checkov:skip=<regla>:<motivo>` dentro del recurso, así la justificación queda junto al código. Para correrlo local: `docker run --rm -v "$PWD/infra:/infra" bridgecrew/checkov:3.4.6 -d /infra --framework terraform --compact` (la misma versión que usa el pipeline).
 
 El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script), `ADMIN_INGRESS_CIDR` y `ALARM_EMAIL`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.

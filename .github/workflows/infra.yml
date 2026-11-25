@@ -142,19 +142,8 @@ jobs:
           TF_VAR_image_tag: ${{ steps.tag.outputs.image_tag }}
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
           TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
-        run: |
-          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
-          terraform show -no-color tfplan > plan-completo.txt
-          # El repo es público: la IP del admin no puede quedar en el comentario ni en el artefacto.
-          # GitHub tapa los secrets en los logs, pero no en lo que publica el workflow.
-          IP="${TF_VAR_admin_ingress_cidr%/*}"
-          # [.] en vez de . para que sed busque el punto literal y no "cualquier carácter"
-          sed "s|${IP//./[.]}|***|g" plan-completo.txt > plan.txt
-          rm plan-completo.txt
-          if grep -qF "$IP" plan.txt; then
-            echo "::error::La IP del admin quedó en el plan, no se publica"
-            exit 1
-          fi
+        # El repo es público: el script tapa las IP del admin en el log, el comentario y el artefacto
+        run: bash ../scripts/terraform-plan.sh
 
       - name: Comentar el plan en el PR
         if: github.event_name == 'pull_request'

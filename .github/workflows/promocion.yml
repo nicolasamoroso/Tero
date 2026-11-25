@@ -169,7 +169,8 @@ jobs:
           TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           export TF_VAR_image_tag="${SHA::7}"
-          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+          # El repo es público: el script imprime el plan con las IP del admin tapadas
+          bash ../scripts/terraform-plan.sh
       - name: terraform apply
         run: terraform apply -input=false -lock-timeout=5m tfplan
       - name: Esperar a que los servicios queden estables
