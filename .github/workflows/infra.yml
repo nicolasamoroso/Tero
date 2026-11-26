@@ -1,0 +1,185 @@
+name: Infra
+
+# Pipeline de Terraform para el stack de cada ambiente (infra/).
+# - PR que toca infra/: fmt, validate, Checkov y plan de dev (el plan se comenta en el PR).
+# - Push a develop (merge): plan y apply en dev.
+# - test y prod se aplican a mano desde Actions; prod pide aprobación (environment prod).
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente a aplicar
+        type: choice
+        options: [dev, test, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.17.0
+  TF_IN_AUTOMATION: 'true'
+
+jobs:
+  # 1) Chequeos que no necesitan AWS
+  checks:
+    name: fmt, validate y Checkov
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      # Bloqueante: falla si hay un hallazgo sin corregir. Los que no aplican están
+      # salteados en el código con #checkov:skip y su justificación.
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@b17b606d6ec72bb8ba5721ad5b7e340b80a9fc39 # v12.3142.0
+        with:
+          directory: infra
+          framework: terraform
+          quiet: true
+
+  # 2) Plan (y apply fuera de los PRs) contra AWS
+  terraform:
+    name: plan y apply (${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }})
+    needs: checks
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    # Applies: un grupo por ambiente que nunca se cancela, así un plan de PR no puede reemplazar
+    # un apply en espera. Planes de PR: un grupo por PR; un push nuevo cancela el plan viejo.
+    # Un plan y un apply pueden coincidir: los ordena el lock del state (-lock-timeout).
+    concurrency:
+      group: ${{ github.event_name == 'pull_request' && format('terraform-plan-pr-{0}', github.event.pull_request.number) || format('terraform-apply-{0}', github.event_name == 'workflow_dispatch' && inputs.environment || 'dev') }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    env:
+      ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Academy no permite OIDC: credenciales del lab guardadas como secrets
+      # (se renuevan con scripts/renovar-credenciales-aws.sh)
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config="envs/backend-${ENVIRONMENT}.hcl"
+
+      # El pipeline de infra no cambia la versión de la app: usa el tag que ya corre en el ambiente.
+      # Si todavía no hay servicios, usa el SHA corto del commit (el mismo que publica el CD).
+      - name: Tag de imagen actual
+        id: tag
+        run: |
+          TASKDEF=$(aws ecs describe-services --cluster "tero-${ENVIRONMENT}" --services ui \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null || true)
+          if [[ -n "$TASKDEF" && "$TASKDEF" != "None" ]]; then
+            IMAGE=$(aws ecs describe-task-definition --task-definition "$TASKDEF" \
+              --query 'taskDefinition.containerDefinitions[0].image' --output text)
+            TAG="${IMAGE##*:}"
+          else
+            TAG="${GITHUB_SHA::7}"
+            # Servicios nuevos: si el apply los crea antes de que el CD suba las imágenes de este SHA,
+            # las tasks fallan, el circuit breaker marca el deployment como FAILED y, sin versión
+            # anterior a la cual volver, el servicio queda en 0. Por eso se espera a que estén en ECR.
+            # En los planes de PR no se espera: no crean nada y el CD no publica el SHA de un PR.
+            if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+              for SERVICE in ui admin checkout cart catalog orders; do
+                for i in $(seq 1 40); do
+                  aws ecr describe-images --repository-name "tero/${SERVICE}" \
+                    --image-ids imageTag="$TAG" >/dev/null 2>&1 && continue 2
+                  echo "Esperando tero/${SERVICE}:${TAG} en ECR (${i}/40)..."
+                  sleep 30
+                done
+                echo "::error::tero/${SERVICE}:${TAG} no está en ECR después de 20 minutos. Correr el CD para este commit y volver a correr este workflow."
+                exit 1
+              done
+            fi
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "image_tag: $TAG"
+
+      - name: terraform plan
+        env:
+          TF_VAR_image_tag: ${{ steps.tag.outputs.image_tag }}
+          TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+        run: |
+          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+          terraform show -no-color tfplan > plan-completo.txt
+          # El repo es público: la IP del admin no puede quedar en el comentario ni en el artefacto.
+          # GitHub tapa los secrets en los logs, pero no en lo que publica el workflow.
+          IP="${TF_VAR_admin_ingress_cidr%/*}"
+          # [.] en vez de . para que sed busque el punto literal y no "cualquier carácter"
+          sed "s|${IP//./[.]}|***|g" plan-completo.txt > plan.txt
+          rm plan-completo.txt
+          if grep -qF "$IP" plan.txt; then
+            echo "::error::La IP del admin quedó en el plan, no se publica"
+            exit 1
+          fi
+
+      - name: Comentar el plan en el PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('infra/plan.txt', 'utf8');
+            // El resumen va arriba: si el plan se recorta, igual se ve qué hace
+            const resumen = (plan.match(/^(Plan: .*|No changes\..*)$/m) || ['(sin resumen: ver el plan)'])[0];
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (recortado: el plan completo está en el artefacto)';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### Terraform plan (${process.env.ENVIRONMENT})\n\n**${resumen}**\n\n<details><summary>Ver el plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`
+            });
+
+      - name: Subir el plan
+        uses: actions/upload-artifact@v6
+        with:
+          name: plan-${{ env.ENVIRONMENT }}
+          path: infra/plan.txt
+          retention-days: 14
+
+      # El apply usa exactamente el plan de arriba (tfplan), no uno nuevo
+      - name: terraform apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -input=false -lock-timeout=5m tfplan

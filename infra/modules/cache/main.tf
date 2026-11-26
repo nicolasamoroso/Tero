@@ -13,6 +13,7 @@ resource "aws_elasticache_subnet_group" "this" {
 }
 
 resource "aws_elasticache_cluster" "this" {
+  #checkov:skip=CKV_AWS_134:Redis solo guarda checkouts en curso, que son temporales; no hay datos que valga la pena respaldar
   cluster_id           = "${var.name}-redis"
   engine               = "redis"
   engine_version       = var.engine_version

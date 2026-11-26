@@ -11,3 +11,13 @@
 # Builds locales
 node_modules/
 dist/
+
+# Python (tests locales)
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.out
+coverage/
+**/.yarn/install-state.gz

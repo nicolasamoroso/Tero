@@ -55,6 +55,18 @@ docker compose up --build <servicio>
 docker compose logs -f <servicio>
 ```
 
+## Tests
+
+Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.yml`) y generan el reporte de coverage que usa Sonar. No necesitan base de datos: usan las implementaciones en memoria de cada servicio (SQLite en catalog y orders).
+
+| Servicio | Cómo correrlos (desde la carpeta del servicio) | Reporte de coverage |
+|--|--|--|
+| cart | `python -m venv .venv`, `.venv/Scripts/python -m pip install -r requirements-dev.txt` y `.venv/Scripts/python -m pytest --cov=app --cov-report=xml` | `coverage.xml` |
+| catalog, orders | `go test ./... -coverpkg=./... -coverprofile=coverage.out` (sin Go instalado: `docker run --rm -v "$PWD:/src" -w /src golang:1.26.11 sh -c "go test ./..."`) | `coverage.out` |
+| checkout | `node .yarn/releases/yarn-4.11.0.cjs test` | `coverage/lcov.info` |
+
+`src/cart/requirements-dev.lock` fija con hashes todas las dependencias de test de cart. Hay que regenerarlo cuando cambian `requirements.txt` o `requirements-dev.txt`; si no, el CI prueba con versiones viejas. Desde `src/cart/` (con Python 3.12): `pip-compile --allow-unsafe --generate-hashes --output-file=requirements-dev.lock --pip-args='--only-binary=:all:' --strip-extras requirements-dev.txt`.
+
 ## Despliegue en AWS
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
@@ -211,6 +223,46 @@ aws ecs update-service --cluster tero-dev --service <servicio> --force-new-deplo
 La tienda queda en el output `alb_url` y el panel de admin en `alb_admin_url` (usuario `admin`, la contraseña se lee con `aws secretsmanager get-secret-value --secret-id tero/dev/admin-password --query SecretString --output text`).
 
 `carts` abre una sola conexión a la base al arrancar y no la recupera si se corta (reinicio o mantenimiento de RDS). Su `/health` no consulta la base, así que ECS lo sigue viendo sano, pero el carrito responde 500 con `connection already closed` en los logs. Se arregla con el mismo `--force-new-deployment` sobre `carts`.
+
+### 7. Pipeline de infraestructura
+
+`.github/workflows/infra.yml` corre Terraform desde GitHub Actions:
+
+| Evento | Qué hace |
+|--|--|
+| PR que toca `infra/` | `fmt -check`, `validate`, Checkov y `plan` de dev. El plan queda como comentario en el PR y como artefacto |
+| Merge a `develop` | `plan` y `apply` en dev |
+| A mano (Actions → Infra → Run workflow) | `plan` y `apply` en el ambiente elegido. En prod pide aprobación |
+
+Checkov bloquea: un hallazgo nuevo hace fallar el PR. Se corrige, o se saltea con `#checkov:skip=<regla>:<motivo>` dentro del recurso, así la justificación queda junto al código. Para correrlo local: `docker run --rm -v "$PWD/infra:/infra" bridgecrew/checkov:3.4.6 -d /infra --framework terraform --compact` (la misma versión que usa el pipeline).
+
+El pipeline no cambia la versión de la app: usa el `image_tag` que ya corre en el ambiente (o el SHA del commit, si todavía no hay servicios; en ese caso, antes del apply espera hasta 20 minutos a que el CD suba las imágenes de ese SHA a ECR y, si no aparecen, falla sin crear nada). Necesita los secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_SESSION_TOKEN` (ver abajo, se renuevan con el script) y `ADMIN_INGRESS_CIDR`. Si las credenciales vencieron, el job `terraform` falla al configurar AWS: hay que renovarlas y volver a correrlo.
+
+El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a `develop`, después de subir las imágenes, el job `deploy (dev)` aplica Terraform con `image_tag` igual al SHA corto del commit, espera a que los servicios queden estables y verifica que todos corran ese `APP_VERSION`. Comparte el grupo de concurrencia con el apply de `infra.yml`, así nunca corren dos `terraform apply` a la vez en dev.
+
+- Si dev está apagado (no existe el cluster o el servicio), el deploy se omite con un aviso y las imágenes quedan en ECR. Se levanta dev con `infra.yml` y el próximo merge despliega.
+- Si vencieron las credenciales, o falla cualquier otra consulta a AWS, el job falla: hay que renovarlas y volver a correrlo.
+- Si dev se acaba de crear de cero, el deploy falla esperando a que los servicios queden estables hasta que se cargan los secretos de admin (paso 4) y se corre `init-db.sh` (paso 5). Después se vuelve a correr el job.
+- Rollback: si una task nueva no arranca, el circuit breaker de ECS vuelve solo a la versión anterior y el job falla en la verificación. Para volver a una versión que sí arrancó, se revierte el commit en `develop` (el CD despliega el revert) o se aplica a mano con `-var image_tag=<sha anterior>`, cuya imagen sigue en ECR.
+
+La promoción a test y prod la hace `.github/workflows/promocion.yml`: un push a `release/*` promueve a test y un push a `main` promueve a prod. No reconstruye nada: despliega el SHA original del commit de `develop` (en un merge commit de `release/*` a `main` es el último commit de la rama de release), así dev, test y prod corren la misma imagen.
+
+- Gates: antes de desplegar, el job `gates` verifica que en ese SHA hayan pasado `CI ok` (incluye los tests), `semgrep`, `trivy-fs` y `gitleaks`, que `sonarcloud` haya pasado en el PR que introdujo el commit (en el plan gratis de SonarCloud el quality gate solo existe en PRs y en `main`, no en los push a `develop`), y que las 6 imágenes estén en ECR. Si algo falla, no se promueve.
+- prod usa `environment: prod`, con aprobación manual (required reviewers).
+- El ambiente tiene que estar levantado (con Infra): si no, el job falla en vez de omitirse.
+- `release/*` se mergea a `main` con merge commit, sin squash: con squash se pierde el SHA original y no hay imagen para ese commit.
+- Un commit directo en `release/*` no tiene imagen (el CD solo construye en `develop` y en tags `v*`) ni los checks de `semgrep`, `trivy-fs` y `gitleaks`, así que el gate lo frena. Los fixes de una release se hacen por `develop` y se corta una release nueva.
+
+### 8. Análisis de calidad (SonarCloud)
+
+`.github/workflows/sonar.yml` analiza el código en SonarCloud (proyecto `nicolasamoroso_Tero`) en cada PR a `develop` y `main` y en cada push a `main`. No corre en los push a `develop` porque en el plan gratis de SonarCloud solo la rama principal tiene quality gate; el gate de `develop` se aplica en el PR, antes de mergear. Necesita el secret `SONAR_TOKEN`, y en SonarCloud el Automatic Analysis tiene que estar desactivado.
+
+La base es la del laboratorio de SonarCloud (T02): `sonarqube-scan-action` y un `sonar-project.properties` en la raíz. Se agregan dos cosas que el laboratorio no tiene:
+
+- **Coverage.** Antes del análisis corre los tests de catalog, orders, cart y checkout y le pasa los reportes a Sonar. Corre siempre los cuatro, no solo los que cambiaron, para que el coverage de los servicios sin cambios no aparezca en 0. ui y admin no tienen tests.
+- **Quality gate que bloquea.** Con `sonar.qualitygate.wait=true` el job espera el resultado del quality gate y falla si no pasa. En el laboratorio el gate solo se ve en SonarCloud y el pipeline sigue igual.
+
+Como el workflow instala dependencias para correr los tests, Sonar también lo analiza: `pip` instala solo paquetes binarios (`--only-binary :all:`) y `yarn` no corre los scripts de instalación (`YARN_ENABLE_SCRIPTS=false`). El aviso por instalar dependencias de Python sin lockfile con hashes quedó aceptado en SonarCloud: las versiones directas están fijadas con `==` y Trivy fs escanea las dependencias.
 
 ### Limitaciones de AWS Academy
 
