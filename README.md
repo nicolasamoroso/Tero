@@ -67,6 +67,14 @@ Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.y
 
 `src/cart/requirements-dev.lock` fija con hashes todas las dependencias de test de cart. Hay que regenerarlo cuando cambian `requirements.txt` o `requirements-dev.txt`; si no, el CI prueba con versiones viejas. Desde `src/cart/` (con Python 3.12): `pip-compile --allow-unsafe --generate-hashes --output-file=requirements-dev.lock --pip-args='--only-binary=:all:' --strip-extras requirements-dev.txt`.
 
+### Tests de integración (Postman)
+
+`tests/postman/tero.postman_collection.json` recorre la tienda por el ALB público, como la UI: lista el catálogo, agrega un producto al carrito, carga el checkout, confirma la compra y verifica que la orden aparezca en orders. Cada corrida usa un cliente nuevo (`test-<timestamp>`). Hay un environment por ambiente en `tests/postman/environments/`; la URL se pasa al correrlo.
+
+Corren después de cada deploy: en dev (`cd.yml`) y en test y prod (`promocion.yml`). El reporte JUnit queda como artefacto (`tests-integracion-<ambiente>`). Si fallan, el commit no se promueve: para ir a test tiene que haber pasado `deploy (dev)` y para ir a prod, `deploy (test)`.
+
+También se puede importar la colección y el environment en Postman y correrla con Run collection (con `baseUrl` apuntando a la tienda). Para correrlos local desde la terminal, contra un ambiente levantado (con Docker y el `terraform init` de ese ambiente): `ENVIRONMENT=dev bash scripts/tests-integracion.sh`. Contra otra URL: `ENVIRONMENT=dev BASE_URL=http://localhost:8080 bash scripts/tests-integracion.sh`.
+
 ## Despliegue en AWS
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
@@ -249,7 +257,7 @@ El deploy de la app lo hace el CD (`.github/workflows/cd.yml`): en cada merge a 
 
 La promoción a test y prod la hace `.github/workflows/promocion.yml`: un push a `release/*` promueve a test y un push a `main` promueve a prod. No reconstruye nada: despliega el SHA original del commit de `develop` (en un merge commit de `release/*` a `main` es el último commit de la rama de release), así dev, test y prod corren la misma imagen.
 
-- Gates: antes de desplegar, el job `gates` verifica que en ese SHA hayan pasado `CI ok` (incluye los tests), `semgrep`, `trivy-fs` y `gitleaks`, que `sonarcloud` haya pasado en el PR que introdujo el commit (en el plan gratis de SonarCloud el quality gate solo existe en PRs y en `main`, no en los push a `develop`), y que las 6 imágenes estén en ECR. Si algo falla, no se promueve.
+- Gates: antes de desplegar, el job `gates` verifica que en ese SHA hayan pasado `CI ok` (incluye los tests), `semgrep`, `trivy-fs` y `gitleaks`, que el deploy del ambiente anterior haya pasado con los tests de integración (`deploy (dev)` para test, `deploy (test)` para prod), que `sonarcloud` haya pasado en el PR que introdujo el commit (en el plan gratis de SonarCloud el quality gate solo existe en PRs y en `main`, no en los push a `develop`), y que las 6 imágenes estén en ECR. Si algo falla, no se promueve.
 - prod usa `environment: prod`, con aprobación manual (required reviewers).
 - El ambiente tiene que estar levantado (con Infra): si no, el job falla en vez de omitirse.
 - `release/*` se mergea a `main` con merge commit, sin squash: con squash se pierde el SHA original y no hay imagen para ese commit.
