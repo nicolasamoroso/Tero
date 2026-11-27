@@ -67,6 +67,8 @@ Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.y
 
 `src/cart/requirements-dev.lock` fija con hashes todas las dependencias de test de cart. Hay que regenerarlo cuando cambian `requirements.txt` o `requirements-dev.txt`; si no, el CI prueba con versiones viejas. Desde `src/cart/` (con Python 3.12): `pip-compile --allow-unsafe --generate-hashes --output-file=requirements-dev.lock --pip-args='--only-binary=:all:' --strip-extras requirements-dev.txt`.
 
+Lo mismo con `src/cart/requirements.lock`, que es lo que instala la imagen de cart: se regenera cuando cambia `requirements.txt`, con el mismo comando cambiando `requirements-dev` por `requirements`.
+
 ### Tests de integración (Postman)
 
 `tests/postman/tero.postman_collection.json` recorre la tienda por el ALB público, como la UI: lista el catálogo, agrega un producto al carrito, carga el checkout, confirma la compra y verifica que la orden aparezca en orders. Cada corrida usa un cliente nuevo (`test-<timestamp>`). Hay un environment por ambiente en `tests/postman/environments/`; la URL se pasa al correrlo.
