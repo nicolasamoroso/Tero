@@ -57,3 +57,8 @@ output "alarms_sns_topic_arn" {
   description = "ARN del tópico SNS que reciben todas las alarmas"
   value       = module.alarms.sns_topic_arn
 }
+
+output "health_checker_function_name" {
+  description = "Nombre de la Lambda health-checker (para invocarla a mano o ver sus logs)"
+  value       = module.health_checker.function_name
+}

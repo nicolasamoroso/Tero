@@ -1,11 +1,18 @@
 # Runbook: disponibilidad
 
-Cubre dos alarmas, porque las dos significan "los usuarios reciben errores o hay un servicio caído":
+Cubre tres alarmas, porque las tres significan "los usuarios reciben errores o hay un servicio caído":
 
 | Alarma | Se dispara cuando | Por qué ese umbral |
 |--|--|--|
 | `tero-<ambiente>-<publico\|interno>-5xx` | Más de 5 respuestas 5XX de los servicios en 5 minutos, en el ALB público o en el interno | Un error suelto puede ser un request raro; más de 5 en 5 minutos ya es un patrón |
 | `tero-<ambiente>-<servicio>-unhealthy` | Al menos una task del servicio no pasa el health check (`/health`) durante 2 minutos seguidos | 2 minutos evita avisar por una task que tarda en arrancar en un deploy |
+| `tero-<ambiente>-availability` | La Lambda health-checker ve algún servicio del ALB interno sin responder su `/health` en dos chequeos seguidos (10 minutos), o deja de mandar datos | Es un chequeo desde afuera del servicio, como lo haría un usuario. Sin datos también alarma: si la Lambda no corre, nadie está vigilando |
+
+Para ver qué servicio falló según la Lambda: CloudWatch → Metrics → `Tero/Availability` → `Service` (1 = sano, 0 = caído), o su log:
+
+```bash
+aws logs tail /aws/lambda/tero-dev-health-checker --since 30m
+```
 
 El ALB público tiene ui y admin; el interno, catalog, carts, orders y checkout. Si salta la alarma del interno pero no la del público, el error está en un servicio de atrás y la ui lo puede estar escondiendo o mostrando como página de error.
 
