@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -58,6 +58,7 @@ type CreateOrderRequest struct {
 var db *gorm.DB
 
 func main() {
+	initLogger(os.Stdout)
 	dsn := buildDSN()
 
 	var err error
@@ -66,18 +67,19 @@ func main() {
 		if err == nil {
 			break
 		}
-		fmt.Printf("Waiting for PostgreSQL... (%v)\n", err)
+		slog.Warn("Waiting for PostgreSQL", "error", err)
 		time.Sleep(5 * time.Second)
 	}
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		fatal("Failed to connect to database", err)
 	}
 
 	if err := db.AutoMigrate(&Order{}, &OrderItem{}); err != nil {
-		log.Fatal("Failed to migrate schema:", err)
+		fatal("Failed to migrate schema", err)
 	}
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(requestLogger("/health", "/metrics"), recoveryLogger())
 
 	p := ginprometheus.NewPrometheus("gin")
 	p.Use(r)
@@ -89,7 +91,7 @@ func main() {
 
 	port := getEnv("PORT", "8080")
 	if err := r.Run(":" + port); err != nil {
-		log.Fatal(err)
+		fatal("Error fatal", err)
 	}
 }
 

@@ -4,8 +4,10 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import crypto from 'crypto';
 import path from 'path';
+import { log, requestLogger } from './logger';
 
 const app = express();
+app.use(requestLogger);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -160,4 +162,4 @@ app.get('*', (_req: Request, res: Response): void => {
 });
 
 const port = parseInt(process.env.PORT || '8080');
-app.listen(port, () => console.log(`Admin listening on :${port}`));
+app.listen(port, () => log('info', 'Admin listening', { port }));

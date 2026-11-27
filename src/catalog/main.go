@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +40,7 @@ import (
 // @BasePath /
 
 func main() {
+	initLogger(os.Stdout)
 	ctx := context.Background()
 
 	_, otelPresent := os.LookupEnv("OTEL_SERVICE_NAME")
@@ -47,36 +48,34 @@ func main() {
 	if otelPresent {
 		_, err := initTracer(ctx)
 		if err != nil {
-			log.Fatal(err)
+			fatal("Error fatal", err)
 		}
 	}
 
 	var config config.AppConfiguration
 	if err := envconfig.Process(ctx, &config); err != nil {
-		log.Fatal(err)
+		fatal("Error fatal", err)
 	}
 
 	db, err := repository.NewRepository(config.Database)
 	if err != nil {
-		log.Fatal(err)
+		fatal("Error fatal", err)
 	}
 
 	api, err := api.NewCatalogAPI(db)
 	if err != nil {
-		log.Fatal(err)
+		fatal("Error fatal", err)
 	}
 
 	r := gin.New()
-	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: []string{"/health"},
-	}))
+	r.Use(requestLogger("/health", "/metrics"), recoveryLogger())
 
 	p := ginprometheus.NewPrometheus("gin")
 	p.Use(r)
 
 	c, err := controller.NewController(api)
 	if err != nil {
-		log.Fatalln("Error creating controller", err)
+		fatal("Error creating controller", err)
 	}
 
 	chaosController := middleware.NewChaosController()
@@ -118,7 +117,7 @@ func main() {
 	// it won't block the graceful shutdown handling below
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %s\n", err)
+			fatal("listen", err)
 		}
 	}()
 
@@ -130,17 +129,17 @@ func main() {
 	// kill -9 is syscall.SIGKILL but can't be catch, so don't need add it
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	slog.Info("Shutting down server")
 
 	// The context is used to inform the server it has 5 seconds to finish
 	// the request it is currently handling
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		fatal("Server forced to shutdown", err)
 	}
 
-	log.Println("Server exiting")
+	slog.Info("Server exiting")
 }
 
 func initTracer(ctx context.Context) (*sdktrace.TracerProvider, error) {
