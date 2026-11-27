@@ -21,3 +21,6 @@ coverage.xml
 coverage.out
 coverage/
 **/.yarn/install-state.gz
+
+# Reportes de los tests de integración
+tests/postman/reportes/
