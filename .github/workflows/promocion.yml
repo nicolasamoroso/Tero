@@ -54,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHA: ${{ needs.contexto.outputs.sha }}
+      AMBIENTE: ${{ needs.contexto.outputs.ambiente }}
     steps:
       # CI, SAST, SCA y Gitleaks corren en el push a develop, así que sus checks quedan en el commit.
       # SonarCloud (plan gratis) solo tiene quality gate en PRs y en main: se verifica en la cabeza del PR que introdujo el commit.
@@ -78,8 +79,15 @@ jobs:
           CHECKS_SONAR=$(checks "$SHA_SONAR")
           echo "Checks encontrados en ${SHA::7}:"
           echo "  ${CHECKS_COMMIT//$'\n'/$'\n'  }"
+          # El deploy del ambiente anterior incluye los tests de integración: a test solo llega lo que pasó en dev, y a prod lo que pasó en test.
+          # Si dev estaba apagado, "deploy (dev)" queda en verde sin desplegar, pero test sí lo prueba.
+          if [[ "$AMBIENTE" == "prod" ]]; then
+            ANTERIOR="deploy (test)"
+          else
+            ANTERIOR="deploy (dev)"
+          fi
           FALLA=0
-          for REQUERIDO in "CI ok" "semgrep" "trivy-fs" "gitleaks"; do
+          for REQUERIDO in "CI ok" "semgrep" "trivy-fs" "gitleaks" "$ANTERIOR"; do
             if paso "$CHECKS_COMMIT" "$REQUERIDO"; then
               echo "OK    $REQUERIDO"
             else
@@ -166,9 +174,11 @@ jobs:
       - name: terraform plan
         env:
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           export TF_VAR_image_tag="${SHA::7}"
-          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+          # El repo es público: el script imprime el plan con las IP del admin tapadas
+          bash ../scripts/terraform-plan.sh
       - name: terraform apply
         run: terraform apply -input=false -lock-timeout=5m tfplan
       - name: Esperar a que los servicios queden estables
@@ -193,3 +203,11 @@ jobs:
             echo "::error::Algún servicio no corre la versión $ESPERADO"
             exit 1
           fi
+      - name: Tests de integración
+        run: bash ../scripts/tests-integracion.sh
+      - name: Subir el reporte de los tests de integración
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tests-integracion-${{ env.ENVIRONMENT }}
+          path: tests/postman/reportes/

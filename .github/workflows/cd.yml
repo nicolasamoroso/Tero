@@ -166,9 +166,11 @@ jobs:
         env:
           TF_VAR_image_tag: ${{ github.sha }}
           TF_VAR_admin_ingress_cidr: ${{ secrets.ADMIN_INGRESS_CIDR }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           export TF_VAR_image_tag="${TF_VAR_image_tag::7}"
-          terraform plan -input=false -lock-timeout=5m -var-file="envs/${ENVIRONMENT}.tfvars" -out=tfplan
+          # El repo es público: el script imprime el plan con las IP del admin tapadas
+          bash ../scripts/terraform-plan.sh
 
       - name: terraform apply
         if: steps.dev.outputs.levantado == 'true'
@@ -196,3 +198,15 @@ jobs:
             echo "::error::Algún servicio no corre la versión $ESPERADO"
             exit 1
           fi
+
+      # Tests de integración contra la tienda recién desplegada: si fallan, el commit no se puede promover a test
+      - name: Tests de integración
+        if: steps.dev.outputs.levantado == 'true'
+        run: bash ../scripts/tests-integracion.sh
+
+      - name: Subir el reporte de los tests de integración
+        if: always() && steps.dev.outputs.levantado == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: tests-integracion-dev
+          path: tests/postman/reportes/
