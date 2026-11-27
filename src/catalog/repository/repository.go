@@ -25,15 +25,27 @@ type CatalogRepository interface {
 	GetTags(ctx context.Context) ([]model.Tag, error)
 }
 
-func createPostgreSQLDatabase(config config.DatabaseConfiguration) (*gorm.DB, error) {
+// quoteDSNValue pone un valor entre comillas simples para el DSN de Postgres (formato clave=valor),
+// escapando \ y '. Sin eso, una contraseña con espacios o con \ (RDS las puede generar) rompe el DSN.
+func quoteDSNValue(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `'`, `\'`)
+	return "'" + value + "'"
+}
+
+func buildDSN(config config.DatabaseConfiguration) string {
 	host := config.Endpoint
 	port := "5432"
 	if parts := strings.SplitN(config.Endpoint, ":", 2); len(parts) == 2 {
 		host = parts[0]
 		port = parts[1]
 	}
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable connect_timeout=%d",
-		host, port, config.User, config.Password, config.Name, config.ConnectTimeout)
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable connect_timeout=%d",
+		host, port, config.User, quoteDSNValue(config.Password), config.Name, config.ConnectTimeout)
+}
+
+func createPostgreSQLDatabase(config config.DatabaseConfiguration) (*gorm.DB, error) {
+	dsn := buildDSN(config)
 
 	var db *gorm.DB
 	var err error
