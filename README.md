@@ -84,6 +84,15 @@ A tener en cuenta:
 
 También se puede importar la colección y el environment en Postman y correrla con Run collection (con `baseUrl` apuntando a la tienda). Para correrlos local desde la terminal, contra un ambiente levantado (con Docker y el `terraform init` de ese ambiente): `ENVIRONMENT=dev bash scripts/tests-integracion.sh`. Contra otra URL: `ENVIRONMENT=dev BASE_URL=http://localhost:8080 bash scripts/tests-integracion.sh`.
 
+### Prueba de carga (k6)
+
+`tests/k6/carga.js` simula 10 clientes durante 3 minutos contra el ALB público: miran el catálogo, agregan al carrito y uno de cada cinco compra. Tiene umbrales iguales a las alarmas (p95 menor a 1 segundo y menos de 1% de errores): si alguno no se cumple, k6 termina con error. No corre en el pipeline, porque necesita un ambiente levantado y genera carga real; se corre a mano. Los resultados de la última corrida están en [`docs/pruebas-de-carga.md`](docs/pruebas-de-carga.md).
+
+```bash
+BASE_URL=$(terraform -chdir=infra output -raw alb_url)
+docker run --rm -i -e BASE_URL="$BASE_URL" grafana/k6:1.4.2 run - < tests/k6/carga.js
+```
+
 ## Despliegue en AWS
 
 La infraestructura está definida con Terraform en `infra/`. Los pasos se completan a medida que se agregan los módulos.
