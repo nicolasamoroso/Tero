@@ -73,6 +73,13 @@ Cada servicio tiene tests unitarios que corren en el CI (`.github/workflows/ci.y
 
 Corren después de cada deploy: en dev (`cd.yml`) y en test y prod (`promocion.yml`). El reporte JUnit queda como artefacto (`tests-integracion-<ambiente>`). Si fallan, el commit no se promueve: para ir a test tiene que haber pasado `deploy (dev)` y para ir a prod, `deploy (test)`.
 
+A tener en cuenta:
+
+- Para promover a prod, test tiene que estar levantado en cada release: la promoción exige que los tests hayan pasado ahí.
+- Si dev estaba apagado al mergear, `deploy (dev)` queda en verde sin correr los tests, así que el gate hacia test no prueba nada. Los tests corren igual al desplegar en test, y eso es lo que exige prod.
+- Los tests corren después del deploy: si fallan en prod, el job queda en rojo pero no vuelve a la versión anterior. Para volver atrás, ver el rollback en la sección 7.
+- Cada corrida crea una orden real a nombre de "Juan Pérez" en la base del ambiente, también en prod.
+
 También se puede importar la colección y el environment en Postman y correrla con Run collection (con `baseUrl` apuntando a la tienda). Para correrlos local desde la terminal, contra un ambiente levantado (con Docker y el `terraform init` de ese ambiente): `ENVIRONMENT=dev bash scripts/tests-integracion.sh`. Contra otra URL: `ENVIRONMENT=dev BASE_URL=http://localhost:8080 bash scripts/tests-integracion.sh`.
 
 ## Despliegue en AWS

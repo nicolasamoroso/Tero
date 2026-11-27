@@ -13,7 +13,9 @@ BASE_URL="${BASE_URL:-$(terraform -chdir="$RAIZ/infra" output -raw alb_url)}"
 mkdir -p "$RAIZ/tests/postman/reportes"
 echo "Tests de integración contra $ENVIRONMENT: $BASE_URL"
 
-docker run --rm -v "$RAIZ/tests/postman:/etc/newman" postman/newman:6.1.3-alpine \
+# Imagen fijada por digest (6.1.3-alpine): un tag se puede volver a publicar, el digest no
+docker run --rm -v "$RAIZ/tests/postman:/etc/newman" \
+  postman/newman:6.1.3-alpine@sha256:d9b5e780ead0026bbb37f3759cd7b10fc8a88cd4030c8266a7c5e343d75a5198 \
   run tero.postman_collection.json \
   --environment "environments/${ENVIRONMENT}.postman_environment.json" \
   --env-var "baseUrl=${BASE_URL}" \
