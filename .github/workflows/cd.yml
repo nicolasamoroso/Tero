@@ -198,3 +198,15 @@ jobs:
             echo "::error::Algún servicio no corre la versión $ESPERADO"
             exit 1
           fi
+
+      # Tests de integración contra la tienda recién desplegada: si fallan, el commit no se puede promover a test
+      - name: Tests de integración
+        if: steps.dev.outputs.levantado == 'true'
+        run: bash ../scripts/tests-integracion.sh
+
+      - name: Subir el reporte de los tests de integración
+        if: always() && steps.dev.outputs.levantado == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: tests-integracion-dev
+          path: tests/postman/reportes/
