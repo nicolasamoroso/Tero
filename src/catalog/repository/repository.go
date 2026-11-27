@@ -50,9 +50,7 @@ func buildDSN(config config.DatabaseConfiguration) string {
 		host = parts[0]
 		port = parts[1]
 	}
-	// La contraseña va entre comillas simples (formato clave=valor de Postgres), escapando \ y '.
-	// Sin eso, una contraseña con espacios o con \ (RDS las puede generar) rompe el DSN.
-	password := strings.ReplaceAll(config.Password, `\`, `\\`)
+	password := strings.ReplaceAll(config.Password, `\`, `\\`) // va entre comillas: con espacio, ' o \ (RDS las genera) rompía el DSN
 	password = strings.ReplaceAll(password, `'`, `\'`)
 	return fmt.Sprintf("host=%s port=%s user=%s password='%s' dbname=%s sslmode=disable connect_timeout=%d",
 		host, port, config.User, password, config.Name, config.ConnectTimeout)
