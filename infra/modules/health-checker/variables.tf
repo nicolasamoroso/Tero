@@ -52,3 +52,15 @@ variable "tags" {
   description = "Tags adicionales para todos los recursos"
   default     = {}
 }
+
+variable "api_rate_limit" {
+  type        = number
+  description = "Requests por segundo que acepta GET /status en promedio (throttling del stage)"
+  default     = 1
+}
+
+variable "api_burst_limit" {
+  type        = number
+  description = "Requests que GET /status acepta de golpe antes de responder 429"
+  default     = 2
+}

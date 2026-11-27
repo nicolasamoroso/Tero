@@ -62,3 +62,8 @@ output "health_checker_function_name" {
   description = "Nombre de la Lambda health-checker (para invocarla a mano o ver sus logs)"
   value       = module.health_checker.function_name
 }
+
+output "health_status_url" {
+  description = "URL pública del estado de los servicios (GET /status del health-checker)"
+  value       = module.health_checker.status_url
+}

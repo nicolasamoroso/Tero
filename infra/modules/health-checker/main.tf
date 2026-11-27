@@ -13,11 +13,23 @@ locals {
   function_name = "${var.name}-health-checker"
 }
 
+# El zip lleva el código y la lista de servicios (targets.json). La lista va en el paquete y no en
+# variables de entorno, así la Lambda no guarda configuración que haya que cifrar con una clave
+# propia, y sirve igual cuando la dispara EventBridge o cuando la llama la API.
 data "archive_file" "code" {
-  type        = "zip"
-  source_file = "${path.module}/lambda/handler.py"
+  type = "zip"
   # Dentro de .terraform, que ya está en el .gitignore: el zip se arma en cada plan
   output_path = "${path.root}/.terraform/build/health-checker.zip"
+
+  source {
+    filename = "handler.py"
+    content  = file("${path.module}/lambda/handler.py")
+  }
+
+  source {
+    filename = "targets.json"
+    content  = jsonencode({ for name, target in var.targets : name => target.url })
+  }
 }
 
 # Security group propio: sin entrada, y solo sale hacia los puertos del ALB interno
@@ -91,12 +103,9 @@ resource "aws_cloudwatch_event_rule" "schedule" {
   tags                = local.common_tags
 }
 
-# La lista de servicios viaja en el evento y no en variables de entorno: así la Lambda no
-# guarda configuración que haya que cifrar con una clave propia
 resource "aws_cloudwatch_event_target" "lambda" {
-  rule  = aws_cloudwatch_event_rule.schedule.name
-  arn   = aws_lambda_function.this.arn
-  input = jsonencode({ targets = { for name, target in var.targets : name => target.url } })
+  rule = aws_cloudwatch_event_rule.schedule.name
+  arn  = aws_lambda_function.this.arn
 }
 
 resource "aws_lambda_permission" "eventbridge" {
@@ -125,4 +134,72 @@ resource "aws_cloudwatch_metric_alarm" "availability" {
   alarm_actions = [var.alarm_topic_arn]
   ok_actions    = [var.alarm_topic_arn]
   tags          = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# Extra: HTTP API con GET /status, para consultar el estado desde afuera (un monitor externo,
+# o en la defensa). Responde 200 si están todos sanos y 503 si alguno no. Throttling en el stage
+# para que nadie pueda disparar la Lambda sin límite.
+# ---------------------------------------------------------------------------
+
+resource "aws_apigatewayv2_api" "status" {
+  name          = "${var.name}-status"
+  description   = "Estado de los servicios de Tero (health-checker)"
+  protocol_type = "HTTP"
+  tags          = local.common_tags
+}
+
+resource "aws_apigatewayv2_integration" "lambda" {
+  api_id                 = aws_apigatewayv2_api.status.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.this.invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 29000
+}
+
+resource "aws_apigatewayv2_route" "status" {
+  #checkov:skip=CKV_AWS_309:Es un endpoint de estado de solo lectura, sin datos sensibles (solo si cada servicio responde); lo limita el throttling del stage
+  api_id    = aws_apigatewayv2_api.status.id
+  route_key = "GET /status"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_cloudwatch_log_group" "api" {
+  #checkov:skip=CKV_AWS_158:CloudWatch ya encripta los logs con claves administradas por AWS; una clave KMS propia suma costo
+  #checkov:skip=CKV_AWS_338:La retención se define por ambiente (log_retention_days); un año de logs en Academy es costo sin uso
+  name              = "/aws/apigateway/${var.name}-status"
+  retention_in_days = var.log_retention_days
+  tags              = local.common_tags
+}
+
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.status.id
+  name        = "$default"
+  auto_deploy = true
+
+  default_route_settings {
+    throttling_rate_limit  = var.api_rate_limit
+    throttling_burst_limit = var.api_burst_limit
+  }
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api.arn
+    format = jsonencode({
+      requestId = "$context.requestId"
+      ip        = "$context.identity.sourceIp"
+      route     = "$context.routeKey"
+      status    = "$context.status"
+      latency   = "$context.responseLatency"
+    })
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_lambda_permission" "api" {
+  statement_id  = "AllowHttpApi"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.this.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.status.execution_arn}/*/*/status"
 }

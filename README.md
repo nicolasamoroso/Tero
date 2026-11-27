@@ -302,14 +302,18 @@ El tópico está cifrado con una clave de KMS propia (`alias/tero-<ambiente>-ala
 - Corre dentro de la VPC, en las subnets privadas, porque el ALB interno solo se alcanza desde ahí. Tiene su propio security group, que solo sale hacia los puertos del ALB interno.
 - Esas subnets no tienen salida a Internet (no hay NAT, ADR 0001), así que la métrica no se publica con la API de CloudWatch: se escribe en el log con el formato EMF (Embedded Metric Format) y CloudWatch la convierte en métrica. Así no hace falta un VPC endpoint, que tiene costo por hora.
 - ui y admin no entran: están solo en el ALB público, que desde las subnets privadas no se alcanza. Los cubren las alarmas de unhealthy.
+- La lista de servicios no va en variables de entorno: Terraform la mete en el zip como `targets.json`, junto al código. Así la Lambda no guarda configuración que haya que cifrar con una clave propia.
 
-- La lista de servicios no va en variables de entorno: EventBridge la manda en el evento de cada ejecución (`{"targets": {...}}`). Así la Lambda no guarda configuración que haya que cifrar con una clave propia.
-
-Para correrla a mano, con el mismo evento que le manda EventBridge (Git Bash):
+**Estado desde afuera (`GET /status`).** Una HTTP API de API Gateway expone la misma Lambda en el output `health_status_url`. Responde 200 si los 4 servicios están sanos y 503 si alguno no, con el detalle en JSON. No publica métricas, así las consultas no cambian lo que mira la alarma. Tiene throttling en el stage (1 request por segundo en promedio, 2 de golpe): pasado eso responde 429, para que nadie pueda disparar la Lambda sin límite.
 
 ```bash
-EVENTO=$(aws events list-targets-by-rule --rule tero-dev-health-checker --query 'Targets[0].Input' --output text)
-aws lambda invoke --function-name tero-dev-health-checker --cli-binary-format raw-in-base64-out --payload "$EVENTO" salida.json && cat salida.json
+curl -s "$(terraform -chdir=infra output -raw health_status_url)"
+```
+
+Para correrla a mano como lo hace EventBridge, publicando las métricas:
+
+```bash
+aws lambda invoke --function-name tero-dev-health-checker salida.json && cat salida.json
 ```
 
 ### Limitaciones de AWS Academy
