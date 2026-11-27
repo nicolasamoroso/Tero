@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12.16-slim AS build
 WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# requirements.lock fija con hashes todas las dependencias (directas y transitivas) y solo instala paquetes binarios
+COPY requirements.lock ./
+RUN pip install --no-cache-dir --only-binary :all: --require-hashes --prefix=/install -r requirements.lock
 
 FROM python:3.12.16-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PORT=8080

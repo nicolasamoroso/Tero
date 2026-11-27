@@ -2,14 +2,14 @@
 FROM node:22.23.5-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
 FROM node:22.23.5-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:22.23.5-alpine
 ENV NODE_ENV=production PORT=8080
@@ -19,7 +19,8 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/public ./public
 COPY package.json ./
 # npm, npx, corepack y yarn no se usan en ejecución y traen vulnerabilidades propias
-RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \n    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+    /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 USER node
 EXPOSE 8080
 CMD ["node", "dist/app.js"]
