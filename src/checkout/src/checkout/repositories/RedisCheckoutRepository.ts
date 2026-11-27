@@ -1,3 +1,4 @@
+import { log } from '../../logger';
 
 
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
@@ -47,7 +48,7 @@ export class RedisCheckoutRepository
         this._readClient = null;
       }
     } catch (error) {
-      console.error('Error closing Redis connections:', error);
+      log('error', 'Error closing Redis connections', { error: String(error) });
       throw error;
     }
   }
@@ -76,7 +77,7 @@ export class RedisCheckoutRepository
       await client.ping();
       return true;
     } catch (error) {
-      console.error('Redis health check failed:', error);
+      log('error', 'Redis health check failed', { error: String(error) });
       return false;
     }
   }
