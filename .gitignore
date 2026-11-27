@@ -19,6 +19,7 @@ __pycache__/
 .coverage
 coverage.xml
 coverage.out
+coverage.raw
 coverage/
 **/.yarn/install-state.gz
 

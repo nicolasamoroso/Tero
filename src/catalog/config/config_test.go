@@ -32,3 +32,12 @@ func TestLoad_ElRestoSigueConSusDefaults(t *testing.T) {
 		t.Errorf("config inesperada: %+v", config)
 	}
 }
+
+// Si una variable no se puede convertir al tipo del campo, Load devuelve el error de envconfig.
+func TestLoad_UnValorInvalidoDevuelveError(t *testing.T) {
+	t.Setenv("PORT", "no-es-un-numero")
+
+	if _, err := Load(context.Background()); err == nil {
+		t.Error("esperaba un error con PORT inválido y no vino ninguno")
+	}
+}
