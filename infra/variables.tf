@@ -51,8 +51,8 @@ variable "db_skip_final_snapshot" {
 
 variable "db_password_rotation_days" {
   type        = number
-  description = "Cada cuántos días RDS rota la contraseña de la base. Después de una rotación hay que volver a desplegar los servicios"
-  default     = 365
+  description = "Cada cuántos días RDS rota la contraseña de la base (máximo 90). Después de una rotación hay que volver a desplegar los servicios"
+  default     = 90
 }
 
 variable "secrets_recovery_window_days" {

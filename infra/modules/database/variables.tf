@@ -76,11 +76,11 @@ variable "skip_final_snapshot" {
 variable "password_rotation_days" {
   type        = number
   description = "Cada cuántos días RDS rota la contraseña de la base. Los servicios la leen al arrancar: después de una rotación hay que volver a desplegarlos (ver runbook de disponibilidad)"
-  default     = 365
+  default     = 90
 
   validation {
-    condition     = var.password_rotation_days >= 1 && var.password_rotation_days <= 1000
-    error_message = "Secrets Manager acepta entre 1 y 1000 días."
+    condition     = var.password_rotation_days >= 1 && var.password_rotation_days <= 90
+    error_message = "Entre 1 y 90 días: Checkov (CKV_AWS_304) exige rotar los secretos al menos cada 90 días."
   }
 }
 

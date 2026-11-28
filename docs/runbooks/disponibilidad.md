@@ -69,7 +69,7 @@ aws ecs wait services-stable --cluster tero-dev --services catalog carts orders 
 
 ## Rotar la contraseña de la base a mano
 
-RDS la rota sola cada `db_password_rotation_days` días (365 en dev y test, 90 en prod). Para rotarla antes, por ejemplo si se filtró:
+RDS la rota sola cada `db_password_rotation_days` días (90 en los tres ambientes, el máximo que acepta Checkov). Para rotarla antes, por ejemplo si se filtró:
 
 ```bash
 SECRETO=$(aws rds describe-db-instances --db-instance-identifier tero-dev-postgres \

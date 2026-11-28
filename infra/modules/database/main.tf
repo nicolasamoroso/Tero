@@ -92,7 +92,7 @@ resource "aws_db_instance" "this" {
   }
 }
 
-# RDS rota la contraseña del secreto cada 7 días por defecto. ECS se la pasa a los servicios solo
+# RDS rota la contraseña del secreto cada 7 días por defecto (password_rotation_days, máximo 90). ECS se la pasa a los servicios solo
 # cuando arranca la task: después de una rotación no pueden abrir conexiones nuevas hasta que se
 # vuelven a desplegar. Como los ambientes de Academy duran horas, se rota cada password_rotation_days
 # y a mano cuando haga falta (runbook de disponibilidad). Sin rotar al aplicar: rotar en el apply
