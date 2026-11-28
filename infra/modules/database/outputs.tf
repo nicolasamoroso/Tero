@@ -22,3 +22,8 @@ output "master_user_secret_arn" {
   description = "ARN del secreto de Secrets Manager con la contraseña de la base (lo lee ECS, nunca se guarda en el state)"
   value       = aws_db_instance.this.master_user_secret[0].secret_arn
 }
+
+output "identifier" {
+  description = "Identificador de la instancia RDS (dimensión DBInstanceIdentifier de las métricas)"
+  value       = aws_db_instance.this.identifier
+}

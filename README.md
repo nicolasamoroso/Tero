@@ -201,14 +201,14 @@ Para destruir prod hay que sacar primero la protección de la base: `terraform a
   aws rds delete-db-snapshot --db-snapshot-identifier tero-prod-postgres-final-<fecha>
   ```
 
-- **Secretos de admin:** quedan reservados 7 días (`secrets_recovery_window_days`). Si se vuelve a levantar prod antes, el `apply` falla porque el nombre ya existe. Hay dos salidas: recuperarlos (Terraform los vuelve a tomar, con su valor) o borrarlos del todo (hay que volver a cargarles un valor):
+- **Secretos de admin:** quedan reservados 7 días (`secrets_recovery_window_days`). Si se vuelve a levantar prod antes, el `apply` falla porque el nombre ya existe. Lo más simple es borrarlos del todo antes del `apply`: Terraform los crea de nuevo y se les carga un valor nuevo (paso de arriba).
 
   ```bash
-  aws secretsmanager restore-secret --secret-id tero/prod/admin-password
   aws secretsmanager delete-secret --secret-id tero/prod/admin-password --force-delete-without-recovery
+  aws secretsmanager delete-secret --secret-id tero/prod/admin-jwt-secret --force-delete-without-recovery
   ```
 
-  Lo mismo para `tero/prod/admin-jwt-secret`.
+  Para conservar el valor anterior, en cambio, hay que recuperarlos (`aws secretsmanager restore-secret`) e importarlos al state de prod (`terraform import aws_secretsmanager_secret.admin_password <arn>`, lo mismo con `admin_jwt_secret`). Solo recuperarlos no alcanza: el `apply` falla igual porque el secreto existe y no está en el state.
 
 Para no gastar presupuesto, el ambiente se puede destruir cuando no se usa (`terraform destroy -var-file=envs/dev.tfvars -var image_tag=<sha> -var admin_ingress_cidr=<tu-ip>/32 -var alarm_email=<tu-email>`) y volver a crear con el mismo `apply`.
 
@@ -315,6 +315,17 @@ Para correrla a mano como lo hace EventBridge, publicando las métricas:
 ```bash
 aws lambda invoke --function-name tero-dev-health-checker salida.json && cat salida.json
 ```
+
+### 10. Dashboard
+
+Terraform crea un dashboard de CloudWatch por ambiente (`tero-<ambiente>`, URL en el output `dashboard_url`). Es lo primero que se abre cuando salta una alarma, y tiene los mismos umbrales dibujados como línea horizontal:
+
+| Fila | Qué muestra | De dónde sale |
+|--|--|--|
+| Disponibilidad | % de servicios sanos y health check por servicio | Métrica `Tero/Availability` de la Lambda health-checker |
+| Servicios | CPU y memoria (%), red y tasks corriendo por servicio | `AWS/ECS` y Container Insights (`ECS/ContainerInsights`) |
+| ALBs | Requests, tiempo de respuesta p95 y respuestas 5XX, del ALB público y del interno | `AWS/ApplicationELB` |
+| Base de datos | CPU y conexiones abiertas de RDS | `AWS/RDS` |
 
 ### Limitaciones de AWS Academy
 
