@@ -29,10 +29,16 @@ jobs:
           go-version-file: src/catalog/go.mod
           cache-dependency-path: src/*/go.sum
 
+      # Con -coverpkg cada bloque aparece una vez por paquete de test (con hits en uno y 0 en los demás)
+      # y Sonar toma esos 0 como líneas sin cubrir. Se deja una sola entrada por bloque, sumando los hits.
       - name: Coverage de catalog y orders
         run: |
           for svc in catalog orders; do
-            (cd "src/$svc" && go test ./... -coverpkg=./... -coverprofile=coverage.out -covermode=atomic)
+            (cd "src/$svc" && go test ./... -coverpkg=./... -coverprofile=coverage.raw -covermode=atomic)
+            awk 'NR == 1 { print; next }
+                 { key = $1 " " $2; if (!(key in hits)) order[++n] = key; hits[key] += $3 }
+                 END { for (i = 1; i <= n; i++) print order[i], hits[order[i]] }' \
+              "src/$svc/coverage.raw" > "src/$svc/coverage.out"
           done
 
       - uses: actions/setup-python@v6

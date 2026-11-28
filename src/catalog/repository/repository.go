@@ -26,14 +26,7 @@ type CatalogRepository interface {
 }
 
 func createPostgreSQLDatabase(config config.DatabaseConfiguration) (*gorm.DB, error) {
-	host := config.Endpoint
-	port := "5432"
-	if parts := strings.SplitN(config.Endpoint, ":", 2); len(parts) == 2 {
-		host = parts[0]
-		port = parts[1]
-	}
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable connect_timeout=%d",
-		host, port, config.User, config.Password, config.Name, config.ConnectTimeout)
+	dsn := buildDSN(config)
 
 	var db *gorm.DB
 	var err error
@@ -48,6 +41,19 @@ func createPostgreSQLDatabase(config config.DatabaseConfiguration) (*gorm.DB, er
 	}
 
 	return nil, err
+}
+
+func buildDSN(config config.DatabaseConfiguration) string {
+	host := config.Endpoint
+	port := "5432"
+	if parts := strings.SplitN(config.Endpoint, ":", 2); len(parts) == 2 {
+		host = parts[0]
+		port = parts[1]
+	}
+	password := strings.ReplaceAll(config.Password, `\`, `\\`) // va entre comillas: con espacio, ' o \ (RDS las genera) rompía el DSN
+	password = strings.ReplaceAll(password, `'`, `\'`)
+	return fmt.Sprintf("host=%s port=%s user=%s password='%s' dbname=%s sslmode=disable connect_timeout=%d",
+		host, port, config.User, password, config.Name, config.ConnectTimeout)
 }
 
 func NewRepository(config config.DatabaseConfiguration) (CatalogRepository, error) {

@@ -18,7 +18,6 @@ import (
 	"retail-store/catalog/repository"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sethvargo/go-envconfig/pkg/envconfig"
 	ginprometheus "github.com/zsais/go-gin-prometheus"
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -51,8 +50,8 @@ func main() {
 		}
 	}
 
-	var config config.AppConfiguration
-	if err := envconfig.Process(ctx, &config); err != nil {
+	config, err := config.Load(ctx)
+	if err != nil {
 		log.Fatal(err)
 	}
 
