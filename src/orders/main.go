@@ -144,11 +144,14 @@ func buildDSN() string {
 		host = endpoint[:idx]
 		port = endpoint[idx+1:]
 	}
+	// La contraseña va entre comillas y escapada: la que genera RDS al rotar puede traer ' o \ y rompía el DSN
+	password := strings.ReplaceAll(os.Getenv("RETAIL_ORDERS_PERSISTENCE_PASSWORD"), `\`, `\\`)
+	password = strings.ReplaceAll(password, `'`, `\'`)
 	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		"host=%s port=%s user=%s password='%s' dbname=%s sslmode=disable",
 		host, port,
 		getEnv("RETAIL_ORDERS_PERSISTENCE_USERNAME", "retail_user"),
-		os.Getenv("RETAIL_ORDERS_PERSISTENCE_PASSWORD"),
+		password,
 		getEnv("RETAIL_ORDERS_PERSISTENCE_NAME", "orders"),
 	)
 }

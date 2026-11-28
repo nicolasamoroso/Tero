@@ -49,6 +49,12 @@ variable "db_skip_final_snapshot" {
   default     = true
 }
 
+variable "db_password_rotation_days" {
+  type        = number
+  description = "Cada cuántos días RDS rota la contraseña de la base (máximo 90). Después de una rotación hay que volver a desplegar los servicios"
+  default     = 90
+}
+
 variable "secrets_recovery_window_days" {
   type        = number
   description = "Días que AWS conserva un secreto borrado antes de eliminarlo (0 = al instante). En Academy va 0 para poder recrear con el mismo nombre; en prod conviene 7 o más"

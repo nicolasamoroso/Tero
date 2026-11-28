@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -101,9 +102,20 @@ func TestBuildDSN_SeparaHostYPuerto(t *testing.T) {
 	t.Setenv("RETAIL_ORDERS_PERSISTENCE_PASSWORD", "secreto")
 	t.Setenv("RETAIL_ORDERS_PERSISTENCE_NAME", "ordenes")
 
-	want := "host=db.example.com port=6543 user=usuario password=secreto dbname=ordenes sslmode=disable"
+	want := "host=db.example.com port=6543 user=usuario password='secreto' dbname=ordenes sslmode=disable"
 	if got := buildDSN(); got != want {
 		t.Errorf("DSN:\n esperaba %q\n vino     %q", want, got)
+	}
+}
+
+// Una contraseña rotada por RDS puede traer espacios, comillas, barras o $: tiene que llegar entera
+func TestBuildDSN_LaContrasenaVaEntreComillasYEscapada(t *testing.T) {
+	t.Setenv("RETAIL_ORDERS_PERSISTENCE_ENDPOINT", "db.example.com:5432")
+	t.Setenv("RETAIL_ORDERS_PERSISTENCE_PASSWORD", `a b'c\d$e`)
+
+	want := `password='a b\'c\\d$e'`
+	if got := buildDSN(); !strings.Contains(got, want) {
+		t.Errorf("esperaba %s en el DSN, vino %s", want, got)
 	}
 }
 

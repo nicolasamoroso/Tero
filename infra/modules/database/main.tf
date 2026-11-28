@@ -91,3 +91,17 @@ resource "aws_db_instance" "this" {
     ignore_changes = [final_snapshot_identifier]
   }
 }
+
+# RDS rota la contraseña del secreto cada 7 días por defecto (password_rotation_days, máximo 90). ECS se la pasa a los servicios solo
+# cuando arranca la task: después de una rotación no pueden abrir conexiones nuevas hasta que se
+# vuelven a desplegar. Como los ambientes de Academy duran horas, se rota cada password_rotation_days
+# y a mano cuando haga falta (runbook de disponibilidad). Sin rotar al aplicar: rotar en el apply
+# dejaría a los servicios que ya corren con la contraseña vieja.
+resource "aws_secretsmanager_secret_rotation" "master_password" {
+  secret_id          = aws_db_instance.this.master_user_secret[0].secret_arn
+  rotate_immediately = false
+
+  rotation_rules {
+    automatically_after_days = var.password_rotation_days
+  }
+}
