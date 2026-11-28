@@ -57,3 +57,8 @@ output "alarms_sns_topic_arn" {
   description = "ARN del tópico SNS que reciben todas las alarmas"
   value       = module.alarms.sns_topic_arn
 }
+
+output "dashboard_url" {
+  description = "URL del dashboard de CloudWatch del ambiente"
+  value       = module.dashboard.dashboard_url
+}
