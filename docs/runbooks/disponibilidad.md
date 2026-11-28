@@ -35,6 +35,7 @@ aws ecs describe-services --cluster tero-dev --services ui catalog carts orders 
 | El deploy está en `IN_PROGRESS` o `FAILED` | Una imagen nueva que no arranca; el circuit breaker vuelve solo a la versión anterior | ECS → Deployments; Actions → el último run del CD |
 | Tasks corriendo pero 5XX | Error de la aplicación o de una dependencia (RDS, Redis, otro servicio) | Logs del servicio |
 | Solo catalog, con el chaos activo | Alguien activó `/chaos/status` o `/chaos/health` (prueba de DEV-42) | `GET /chaos/status` en catalog |
+| catalog, carts, orders o admin con `password authentication failed` en el log | RDS rotó la contraseña de la base y el servicio sigue con la vieja: ECS se la pasa solo al arrancar la task | Secrets Manager → el secreto de la base → fecha de la última rotación |
 
 Logs de los últimos 15 minutos de un servicio:
 
@@ -57,6 +58,26 @@ aws ecs update-service --cluster tero-dev --service catalog --force-new-deployme
 
 - **La base o Redis no responden:** revisar en la consola de RDS y ElastiCache que estén `Available`. En Academy, si el lab se reinició, esperar a que vuelvan.
 - **Chaos activo:** apagarlo (`DELETE /chaos/status` y `DELETE /chaos/health` en catalog).
+- **Se rotó la contraseña de la base:** volver a desplegar los cuatro servicios que la usan, así las tasks nuevas leen la contraseña actual:
+
+```bash
+for s in catalog carts orders admin; do
+  aws ecs update-service --cluster tero-dev --service $s --force-new-deployment --query 'service.serviceName' --output text
+done
+aws ecs wait services-stable --cluster tero-dev --services catalog carts orders admin
+```
+
+## Rotar la contraseña de la base a mano
+
+RDS la rota sola cada `db_password_rotation_days` días (365 en dev y test, 90 en prod). Para rotarla antes, por ejemplo si se filtró:
+
+```bash
+SECRETO=$(aws rds describe-db-instances --db-instance-identifier tero-dev-postgres \
+  --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+aws secretsmanager rotate-secret --secret-id "$SECRETO"
+```
+
+Cuando termina la rotación (un minuto, más o menos), los servicios dejan de poder abrir conexiones nuevas: hay que volver a desplegarlos como en el punto anterior. Conviene hacerlo en un momento sin tráfico.
 
 ## 4. Verificar y cerrar
 

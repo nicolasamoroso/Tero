@@ -12,4 +12,5 @@ db_instance_class            = "db.t3.micro"
 cache_node_type              = "cache.t3.micro"
 db_deletion_protection       = true
 db_skip_final_snapshot       = false
+db_password_rotation_days    = 90
 secrets_recovery_window_days = 7
