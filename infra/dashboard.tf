@@ -14,6 +14,6 @@ module "dashboard" {
 
   db_instance_id = module.database.identifier
 
-  # El health-checker chequea los servicios del ALB interno
-  health_checked_services = sort(keys(module.internal_alb.target_group_arn_suffixes))
+  # Los mismos servicios que chequea el health-checker
+  health_checked_services = sort(keys(local.internal_services))
 }

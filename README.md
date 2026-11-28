@@ -293,8 +293,28 @@ Terraform crea alarmas de CloudWatch que avisan por email a través de un tópic
 | Unhealthy (un servicio) | Al menos una task no pasa el health check durante 2 minutos | [disponibilidad](docs/runbooks/disponibilidad.md) |
 | p95 (ALB público e interno) | El p95 del tiempo de respuesta supera 1 segundo en 5 minutos | [rendimiento](docs/runbooks/rendimiento.md) |
 | CPU (un servicio) | Más de 80% de CPU durante 10 minutos | [recursos](docs/runbooks/recursos.md) |
+| Availability (health-checker) | Algún servicio del ALB interno no responde su `/health` en dos chequeos seguidos, o la Lambda deja de correr | [disponibilidad](docs/runbooks/disponibilidad.md) |
 
 El tópico está cifrado con una clave de KMS propia (`alias/tero-<ambiente>-alarmas`, con rotación anual), porque la clave administrada `aws/sns` no deja publicar a CloudWatch. El email sale de `alarm_email` (secret `ALARM_EMAIL` en los pipelines). Después del primer apply, AWS manda un mail para confirmar la suscripción: hasta que no se confirma, no llega ningún aviso.
+
+**Health-checker.** Una Lambda (`tero-<ambiente>-health-checker`, código en `infra/modules/health-checker/lambda/`) corre cada 5 minutos por una regla de EventBridge. Llama al `/health` de catalog, carts, orders y checkout a través del ALB interno y publica la métrica `Tero/Availability`: `Healthy` por servicio (1 o 0) y `Availability`, el porcentaje de servicios sanos, que es la que mira su alarma.
+
+- Corre dentro de la VPC, en las subnets privadas, porque el ALB interno solo se alcanza desde ahí. Tiene su propio security group, que solo sale hacia los puertos del ALB interno.
+- Esas subnets no tienen salida a Internet (no hay NAT, ADR 0001), así que la métrica no se publica con la API de CloudWatch: se escribe en el log con el formato EMF (Embedded Metric Format) y CloudWatch la convierte en métrica. Así no hace falta un VPC endpoint, que tiene costo por hora.
+- ui y admin no entran: están solo en el ALB público, que desde las subnets privadas no se alcanza. Los cubren las alarmas de unhealthy.
+- La lista de servicios no va en variables de entorno: Terraform la mete en el zip como `targets.json`, junto al código. Así la Lambda no guarda configuración que haya que cifrar con una clave propia.
+
+**Estado desde afuera (`GET /status`).** Una HTTP API de API Gateway expone la misma Lambda en el output `health_status_url`. Responde 200 si los 4 servicios están sanos y 503 si alguno no, con el detalle en JSON. No publica métricas, así las consultas no cambian lo que mira la alarma. Tiene throttling en el stage (1 request por segundo en promedio, 2 de golpe): pasado eso responde 429, para que nadie pueda disparar la Lambda sin límite.
+
+```bash
+curl -s "$(terraform -chdir=infra output -raw health_status_url)"
+```
+
+Para correrla a mano como lo hace EventBridge, publicando las métricas:
+
+```bash
+aws lambda invoke --function-name tero-dev-health-checker salida.json && cat salida.json
+```
 
 ### 10. Dashboard
 

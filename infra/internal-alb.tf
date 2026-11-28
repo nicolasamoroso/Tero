@@ -1,3 +1,13 @@
+# Puerto de cada servicio en el ALB interno. Lo usan el ALB y el health-checker
+locals {
+  internal_services = {
+    catalog  = 8082
+    carts    = 8083
+    orders   = 8084
+    checkout = 8085
+  }
+}
+
 module "internal_alb" {
   source = "./modules/internal-alb"
 
@@ -7,10 +17,5 @@ module "internal_alb" {
   security_group_id        = module.network.internal_alb_security_group_id
   client_security_group_id = module.network.services_security_group_id
 
-  services = {
-    catalog  = 8082
-    carts    = 8083
-    orders   = 8084
-    checkout = 8085
-  }
+  services = local.internal_services
 }
